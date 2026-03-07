@@ -26,7 +26,7 @@
     }
 
     .wrap {
-      max-width: 880px;
+      max-width: 920px;
       margin: 0 auto;
       padding: 28px 18px 40px;
     }
@@ -40,7 +40,7 @@
       margin: 0 0 20px;
       color: var(--muted);
       line-height: 1.5;
-      max-width: 720px;
+      max-width: 760px;
     }
 
     .panel {
@@ -147,7 +147,7 @@
   <div class="wrap">
     <h1>Work Bell</h1>
     <p class="lead">
-      Расширение работает каждый день в промежутке от времени "с" до времени "по". Внутри этого окна на каждом интервале оно выбирает одно упражнение, произносит его голосом и ждет, пока вы подтвердите выполнение.
+      Расширение работает каждый день в промежутке от времени "с" до времени "по". Внутри этого окна на каждом интервале оно выбирает одно упражнение, произносит его голосом и ждет подтверждение. Пока подтверждения нет, сигнал продолжает повторяться с указанной частотой.
     </p>
 
     <div class="panel">
@@ -165,9 +165,15 @@
         </div>
 
         <div class="row">
-          <label for="intervalMinutes">Интервал, минут</label>
+          <label for="intervalMinutes">Основной интервал, минут</label>
           <input id="intervalMinutes" type="number" min="1" step="1" />
-          <div class="hint">Можно поставить даже 1 минуту для проверки или очень частых напоминаний.</div>
+          <div class="hint">Как часто запускать новые упражнения внутри рабочего окна.</div>
+        </div>
+
+        <div class="row">
+          <label for="repeatReminderMinutes">Повтор сигнала, минут</label>
+          <input id="repeatReminderMinutes" type="number" min="1" step="1" />
+          <div class="hint">Как часто повторять уже активное напоминание, пока вы не нажмете "Сделано".</div>
         </div>
 
         <div class="row">

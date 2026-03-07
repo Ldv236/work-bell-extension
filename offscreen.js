@@ -107,8 +107,21 @@ function speakOnce(text, soundFile, volume) {
   });
 }
 
+function isSameLoopConfig(reminderId, introText, repeatText, soundFile, volume, repeatMs) {
+  if (!loopConfig) {
+    return false;
+  }
+
+  return loopConfig.reminderId === reminderId
+    && loopConfig.introText === introText
+    && loopConfig.repeatText === repeatText
+    && loopConfig.soundFile === soundFile
+    && loopConfig.volume === Math.max(0, Math.min(1, Number(volume ?? 0.7)))
+    && loopConfig.repeatMs === Math.max(3000, Number(repeatMs || 20000));
+}
+
 async function startLoop(reminderId, introText, repeatText, soundFile, volume, repeatMs) {
-  if (loopConfig && loopConfig.reminderId === reminderId) {
+  if (isSameLoopConfig(reminderId, introText, repeatText, soundFile, volume, repeatMs)) {
     return;
   }
 

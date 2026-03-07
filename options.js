@@ -2,6 +2,7 @@
   startTime: "09:00",
   endTime: "22:00",
   intervalMinutes: 60,
+  repeatReminderMinutes: 3,
   volume: 0.7,
   soundFile: "sounds/bell.wav",
   exercises: [
@@ -20,6 +21,7 @@
 const startTimeEl = document.getElementById("startTime");
 const endTimeEl = document.getElementById("endTime");
 const intervalMinutesEl = document.getElementById("intervalMinutes");
+const repeatReminderMinutesEl = document.getElementById("repeatReminderMinutes");
 const volumeEl = document.getElementById("volume");
 const volumeValueEl = document.getElementById("volumeValue");
 const exercisesEl = document.getElementById("exercises");
@@ -33,6 +35,7 @@ async function load() {
   startTimeEl.value = settings.startTime;
   endTimeEl.value = settings.endTime;
   intervalMinutesEl.value = settings.intervalMinutes;
+  repeatReminderMinutesEl.value = settings.repeatReminderMinutes;
   volumeEl.value = Math.round(Number(settings.volume || DEFAULTS.volume) * 100);
   volumeValueEl.textContent = `${volumeEl.value}%`;
   exercisesEl.value = (settings.exercises || []).join("\n");
@@ -54,7 +57,11 @@ function validate() {
   }
 
   if (Number(intervalMinutesEl.value) < 1) {
-    return "Интервал должен быть не меньше 1 минуты.";
+    return "Основной интервал должен быть не меньше 1 минуты.";
+  }
+
+  if (Number(repeatReminderMinutesEl.value) < 1) {
+    return "Повтор сигнала должен быть не меньше 1 минуты.";
   }
 
   if (list.length === 0) {
@@ -69,6 +76,7 @@ function collectSettings() {
     startTime: startTimeEl.value,
     endTime: endTimeEl.value,
     intervalMinutes: Number(intervalMinutesEl.value),
+    repeatReminderMinutes: Number(repeatReminderMinutesEl.value),
     volume: Number(volumeEl.value) / 100,
     soundFile: "sounds/bell.wav",
     exercises: parseExercises(exercisesEl.value)

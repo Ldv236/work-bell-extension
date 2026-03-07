@@ -1,4 +1,6 @@
-﻿const statusEl = document.getElementById("status");
+﻿const titleEl = document.getElementById("title");
+const subtitleEl = document.getElementById("subtitle");
+const statusEl = document.getElementById("status");
 const exerciseEl = document.getElementById("exercise");
 const nextEl = document.getElementById("next");
 const doneBtn = document.getElementById("doneBtn");
@@ -13,8 +15,8 @@ let todayOpen = false;
 if (isReminderMode) {
   document.body.classList.add("reminder");
   todayBtn.hidden = true;
+  openOptionsBtn.hidden = true;
   todayHistoryEl.classList.add("hidden");
-  tipEl.textContent = "Нажмите \"Сделано\", когда упражнение выполнено.";
 }
 
 function formatTime(isoString) {
@@ -30,6 +32,11 @@ function formatTime(isoString) {
   const now = new Date();
   const time = date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
   return date.toDateString() === now.toDateString() ? time : `${time} ${date.toLocaleDateString()}`;
+}
+
+function formatMinutes(value) {
+  const minutes = Math.max(1, Number(value || 1));
+  return minutes === 1 ? "1 минуту" : `${minutes} мин.`;
 }
 
 function setActionState(hasActiveReminder, isBusy) {
@@ -68,8 +75,23 @@ function renderTodayHistory(state) {
   todayHistoryEl.classList.remove("hidden");
 }
 
+function applyBaseCopy() {
+  if (isReminderMode) {
+    titleEl.textContent = "Пора размяться";
+    subtitleEl.textContent = "Окно открывается на активном сигнале и закрывается после подтверждения выполнения.";
+    tipEl.hidden = true;
+    return;
+  }
+
+  titleEl.textContent = "Work Bell";
+  subtitleEl.textContent = "Напоминание встать, размяться и сделать одно упражнение. Если вас нет за компьютером, голос продолжит повторяться до подтверждения.";
+  tipEl.hidden = false;
+}
+
 function refresh() {
   chrome.runtime.sendMessage({ type: "GET_STATUS" }, (response) => {
+    applyBaseCopy();
+
     if (!response) {
       setNormalMode();
       setActionState(false, false);
@@ -90,16 +112,18 @@ function refresh() {
       return;
     }
 
-    const { state } = response;
+    const { state, settings } = response;
     const pendingReminder = state.pendingReminder;
     const hasActiveReminder = Boolean(state.hasActiveReminder && pendingReminder?.exercise);
 
     if (hasActiveReminder) {
       setAlertMode();
       setActionState(true, false);
-      statusEl.textContent = "Сейчас нужно сделать упражнение";
-      exerciseEl.textContent = `Упражнение: ${pendingReminder.exercise}`;
-      nextEl.textContent = `Сигнал запущен в ${formatTime(pendingReminder.startedAt)}`;
+      statusEl.textContent = isReminderMode ? "Подтвердите после выполнения" : "Сейчас нужно сделать упражнение";
+      exerciseEl.textContent = isReminderMode ? pendingReminder.exercise : `Упражнение: ${pendingReminder.exercise}`;
+      nextEl.textContent = isReminderMode
+        ? `Повтор сигнала: каждые ${formatMinutes(settings.repeatReminderMinutes)}`
+        : `Сигнал запущен в ${formatTime(pendingReminder.startedAt)}`;
       renderTodayHistory(state);
       return;
     }

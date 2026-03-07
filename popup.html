@@ -11,6 +11,8 @@
       --text: #222222;
       --muted: #6b645c;
       --accent: #b15a2b;
+      --accent-dark: #8d4018;
+      --accent-soft: #f6dcbf;
       --border: #ded4c4;
       --warn: #fff0cc;
       --warn-border: #efc56d;
@@ -27,6 +29,10 @@
 
     body.reminder {
       width: auto;
+      min-height: 100vh;
+      background:
+        radial-gradient(circle at top, rgba(177, 90, 43, 0.18), transparent 30%),
+        linear-gradient(180deg, #fff7ea 0%, #f6e7d1 100%);
     }
 
     .wrap {
@@ -34,7 +40,16 @@
     }
 
     body.reminder .wrap {
-      padding: 20px;
+      min-height: 100vh;
+      box-sizing: border-box;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+    }
+
+    .shell {
+      width: 100%;
     }
 
     .title {
@@ -43,20 +58,11 @@
       font-weight: 700;
     }
 
-    body.reminder .title {
-      font-size: 24px;
-    }
-
     .subtitle {
       margin: 0 0 14px;
       color: var(--muted);
       font-size: 13px;
       line-height: 1.45;
-    }
-
-    body.reminder .subtitle {
-      font-size: 14px;
-      margin-bottom: 18px;
     }
 
     .card {
@@ -68,8 +74,12 @@
     }
 
     body.reminder .card {
-      padding: 18px;
-      border-radius: 18px;
+      max-width: 520px;
+      margin: 0 auto;
+      padding: 28px;
+      border-radius: 24px;
+      border: 1px solid rgba(177, 90, 43, 0.28);
+      box-shadow: 0 24px 48px rgba(72, 49, 25, 0.16);
     }
 
     .line {
@@ -90,10 +100,25 @@
       font-weight: 700;
     }
 
+    body.reminder .title {
+      font-size: 30px;
+      margin-bottom: 8px;
+      text-align: center;
+    }
+
+    body.reminder .subtitle {
+      max-width: 420px;
+      margin: 0 auto 20px;
+      font-size: 15px;
+      text-align: center;
+    }
+
     body.reminder .alert {
-      padding: 14px;
-      font-size: 18px;
+      margin-bottom: 14px;
+      padding: 14px 16px;
       border-radius: 14px;
+      font-size: 18px;
+      text-align: center;
     }
 
     #exercise {
@@ -102,10 +127,22 @@
     }
 
     body.reminder #exercise {
-      min-height: 32px;
-      font-size: 22px;
-      line-height: 1.35;
-      margin-bottom: 14px;
+      min-height: 0;
+      margin: 0 0 16px;
+      padding: 18px 20px;
+      border-radius: 18px;
+      background: linear-gradient(180deg, var(--accent-soft) 0%, #fff4e5 100%);
+      border: 1px solid rgba(177, 90, 43, 0.24);
+      font-size: 28px;
+      line-height: 1.25;
+      text-align: center;
+      font-weight: 800;
+    }
+
+    body.reminder #next {
+      font-size: 15px;
+      text-align: center;
+      margin-bottom: 18px;
     }
 
     .today-box {
@@ -140,8 +177,8 @@
     }
 
     body.reminder .btns {
-      margin-top: 16px;
-      gap: 10px;
+      gap: 12px;
+      margin-top: 0;
     }
 
     button {
@@ -156,9 +193,14 @@
     }
 
     body.reminder button {
-      min-height: 48px;
-      font-size: 16px;
-      border-radius: 12px;
+      min-height: 58px;
+      font-size: 18px;
+      border-radius: 14px;
+    }
+
+    body.reminder #doneBtn {
+      background: linear-gradient(180deg, var(--accent) 0%, var(--accent-dark) 100%);
+      box-shadow: 0 14px 22px rgba(177, 90, 43, 0.22);
     }
 
     button.secondary {
@@ -174,19 +216,21 @@
 </head>
 <body>
   <div class="wrap">
-    <h1 class="title">Work Bell</h1>
-    <p class="subtitle">Напоминание встать, размяться и сделать одно упражнение. Если вас нет за компьютером, голос продолжит повторяться до подтверждения.</p>
-    <div class="card">
-      <div id="status" class="line">Загрузка...</div>
-      <div id="exercise" class="line"></div>
-      <div id="next" class="line muted"></div>
-      <div id="todayHistory" class="today-box hidden"></div>
-      <div class="btns">
-        <button id="doneBtn" disabled>Сделано</button>
-        <button id="todayBtn" class="secondary">Сегодня</button>
-        <button id="openOptionsBtn" class="secondary">Настройки</button>
+    <div class="shell">
+      <h1 id="title" class="title">Work Bell</h1>
+      <p id="subtitle" class="subtitle">Напоминание встать, размяться и сделать одно упражнение. Если вас нет за компьютером, голос продолжит повторяться до подтверждения.</p>
+      <div class="card">
+        <div id="status" class="line">Загрузка...</div>
+        <div id="exercise" class="line"></div>
+        <div id="next" class="line muted"></div>
+        <div id="todayHistory" class="today-box hidden"></div>
+        <div class="btns">
+          <button id="doneBtn" disabled>Сделано</button>
+          <button id="todayBtn" class="secondary">Сегодня</button>
+          <button id="openOptionsBtn" class="secondary">Настройки</button>
+        </div>
+        <div id="tip" class="tip">Кнопка "Сделано" активна только в момент реального сигнала.</div>
       </div>
-      <div id="tip" class="tip">Кнопка "Сделано" активна только в момент реального сигнала.</div>
     </div>
   </div>
   <script src="popup.js"></script>

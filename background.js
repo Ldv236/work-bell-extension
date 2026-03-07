@@ -2,6 +2,7 @@
   startTime: "09:00",
   endTime: "22:00",
   intervalMinutes: 60,
+  repeatReminderMinutes: 3,
   volume: 0.7,
   soundFile: "sounds/bell.wav",
   exercises: [
@@ -19,10 +20,9 @@
 
 const TICK_ALARM = "work-bell-tick";
 const NOTIFICATION_ID = "work-bell-reminder";
-const REMINDER_REPEAT_MS = 20000;
 const ACTIVE_TICK_GAP_MS = 2 * 60000;
-const REMINDER_WINDOW_WIDTH = 560;
-const REMINDER_WINDOW_HEIGHT = 560;
+const REMINDER_WINDOW_WIDTH = 620;
+const REMINDER_WINDOW_HEIGHT = 660;
 const OFFSCREEN_START_LOOP = "OFFSCREEN_START_LOOP";
 const OFFSCREEN_STOP_LOOP = "OFFSCREEN_STOP_LOOP";
 const OFFSCREEN_PLAY_PREVIEW = "OFFSCREEN_PLAY_PREVIEW";
@@ -37,6 +37,7 @@ async function getSettings() {
     startTime: raw.startTime,
     endTime: raw.endTime,
     intervalMinutes: Math.max(1, Number(raw.intervalMinutes || DEFAULTS.intervalMinutes)),
+    repeatReminderMinutes: Math.max(1, Number(raw.repeatReminderMinutes || DEFAULTS.repeatReminderMinutes)),
     volume: Math.max(0, Math.min(1, Number(raw.volume ?? DEFAULTS.volume))),
     soundFile: DEFAULTS.soundFile,
     exercises: exercises.length > 0 ? exercises : DEFAULTS.exercises
@@ -205,7 +206,7 @@ function delay(ms) {
 
 function buildReminderSpeech(exercise) {
   return {
-    introText: `Пора размяться. Сделайте упражнение: ${exercise}. Подтвердите выполнение кнопкой Сделано.`,
+    introText: `Пора размяться. Сделайте упражнение: ${exercise}. Подтвердите в приложении.`,
     repeatText: exercise
   };
 }
@@ -247,7 +248,7 @@ async function startReminderLoop(settings, reminder) {
     repeatText: speech.repeatText,
     soundFile: settings.soundFile,
     volume: settings.volume,
-    repeatMs: REMINDER_REPEAT_MS
+    repeatMs: settings.repeatReminderMinutes * 60000
   });
 }
 
@@ -666,4 +667,3 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
     await tick();
   }
 });
-
