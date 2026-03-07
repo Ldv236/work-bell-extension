@@ -6,6 +6,10 @@ let loopTimer = null;
 let loopConfig = null;
 let fallbackAudio = null;
 
+function hasSpeechSupport() {
+  return "speechSynthesis" in globalThis && typeof SpeechSynthesisUtterance !== "undefined";
+}
+
 function clearLoopTimer() {
   if (loopTimer) {
     clearTimeout(loopTimer);
@@ -15,7 +19,10 @@ function clearLoopTimer() {
 
 function stopEverything() {
   clearLoopTimer();
-  speechSynthesis.cancel();
+
+  if (hasSpeechSupport()) {
+    speechSynthesis.cancel();
+  }
 
   if (fallbackAudio) {
     fallbackAudio.pause();
@@ -24,6 +31,10 @@ function stopEverything() {
 }
 
 function pickVoice() {
+  if (!hasSpeechSupport()) {
+    return null;
+  }
+
   const voices = speechSynthesis.getVoices();
   if (!voices.length) {
     return null;
@@ -46,7 +57,7 @@ function playFallback(soundFile, volume) {
 
 function speakOnce(text, soundFile, volume) {
   return new Promise((resolve) => {
-    if (!("speechSynthesis" in globalThis) || typeof SpeechSynthesisUtterance === "undefined") {
+    if (!hasSpeechSupport()) {
       playFallback(soundFile, volume);
       resolve();
       return;
@@ -91,10 +102,15 @@ function speakOnce(text, soundFile, volume) {
   });
 }
 
-async function startLoop(text, soundFile, volume, repeatMs) {
+async function startLoop(reminderId, text, soundFile, volume, repeatMs) {
+  if (loopConfig && loopConfig.reminderId === reminderId) {
+    return;
+  }
+
   stopEverything();
 
   loopConfig = {
+    reminderId,
     text,
     soundFile,
     volume: Math.max(0, Math.min(1, Number(volume ?? 0.7))),
@@ -124,13 +140,15 @@ async function playPreview(text, soundFile, volume) {
   await speakOnce(text, soundFile, volume);
 }
 
-speechSynthesis.onvoiceschanged = () => {
-  speechSynthesis.getVoices();
-};
+if (hasSpeechSupport()) {
+  speechSynthesis.onvoiceschanged = () => {
+    speechSynthesis.getVoices();
+  };
+}
 
 chrome.runtime.onMessage.addListener((message) => {
   if (message?.type === OFFSCREEN_START_LOOP) {
-    startLoop(message.text, message.soundFile, message.volume, message.repeatMs);
+    startLoop(message.reminderId, message.text, message.soundFile, message.volume, message.repeatMs);
     return;
   }
 

@@ -133,7 +133,7 @@ function delay(ms) {
 }
 
 function buildReminderSpeech(exercise) {
-  return `Пора размяться. Сделайте упражнение: ${exercise}. Подтвердите выполнение в расширении.`;
+  return `Пора размяться. Сделайте упражнение: ${exercise}. Подтвердите выполнение кнопкой Сделано.`;
 }
 
 async function ensureOffscreen() {
@@ -164,10 +164,11 @@ async function sendOffscreenMessage(message) {
   }
 }
 
-async function startReminderLoop(settings, exercise) {
+async function startReminderLoop(settings, reminder) {
   await sendOffscreenMessage({
     type: OFFSCREEN_START_LOOP,
-    text: buildReminderSpeech(exercise),
+    reminderId: reminder.startedAt,
+    text: buildReminderSpeech(reminder.exercise),
     soundFile: settings.soundFile,
     volume: settings.volume,
     repeatMs: REMINDER_REPEAT_MS
@@ -178,12 +179,12 @@ async function stopReminderLoop() {
   await sendOffscreenMessage({ type: OFFSCREEN_STOP_LOOP });
 }
 
-async function playPreview(settings) {
+async function playPreview(settings, volumeOverride) {
   await sendOffscreenMessage({
     type: OFFSCREEN_PLAY_PREVIEW,
     text: "Проверка сигнала. Пора размяться и сделать упражнение.",
     soundFile: settings.soundFile,
-    volume: settings.volume
+    volume: Math.max(0, Math.min(1, Number(volumeOverride ?? settings.volume)))
   });
 }
 
@@ -198,9 +199,9 @@ async function showReminderNotification(reminder) {
     iconUrl: "icons/128.png",
     title: "Пора встать от компьютера",
     message: `Сейчас сделать: ${reminder.exercise}`,
-    contextMessage: "Сигнал будет повторяться, пока вы не нажмете " + '"Сделать"' + ".",
+    contextMessage: "Сигнал будет повторяться, пока вы не нажмете \"Сделано\".",
     buttons: [
-      { title: "Сделать" }
+      { title: "Сделано" }
     ],
     priority: 2,
     requireInteraction: true
@@ -349,14 +350,14 @@ async function triggerReminder(now, settings) {
 
   await setBadgePending(true);
   await showReminderNotification(reminder);
-  await startReminderLoop(settings, reminder.exercise);
+  await startReminderLoop(settings, reminder);
   await openReminderPopup();
 }
 
 async function keepPendingReminderAlive(pendingReminder, settings) {
   await setBadgePending(true);
   await showReminderNotification(pendingReminder);
-  await startReminderLoop(settings, pendingReminder.exercise);
+  await startReminderLoop(settings, pendingReminder);
 }
 
 async function rescheduleFromSettings() {
@@ -463,7 +464,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
     if (message?.type === "PLAY_PREVIEW") {
       const settings = await getSettings();
-      await playPreview(settings);
+      await playPreview(settings, message.volume);
       sendResponse({ ok: true });
       return;
     }

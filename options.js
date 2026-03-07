@@ -91,7 +91,10 @@ async function save() {
 }
 
 function testSound() {
-  chrome.runtime.sendMessage({ type: "PLAY_PREVIEW" });
+  chrome.runtime.sendMessage({
+    type: "PLAY_PREVIEW",
+    volume: Number(volumeEl.value) / 100
+  });
   statusEl.textContent = "Проверяю голосовой сигнал";
   statusEl.className = "";
   setTimeout(() => {
