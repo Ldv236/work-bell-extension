@@ -34,7 +34,7 @@ async function getSettings() {
   return {
     startTime: raw.startTime,
     endTime: raw.endTime,
-    intervalMinutes: Math.max(5, Number(raw.intervalMinutes || DEFAULTS.intervalMinutes)),
+    intervalMinutes: Math.max(1, Number(raw.intervalMinutes || DEFAULTS.intervalMinutes)),
     volume: Math.max(0, Math.min(1, Number(raw.volume ?? DEFAULTS.volume))),
     soundFile: DEFAULTS.soundFile,
     exercises: exercises.length > 0 ? exercises : DEFAULTS.exercises
@@ -46,6 +46,7 @@ async function getState() {
     nextDueAt: null,
     pendingReminder: null,
     lastCompletedAt: null,
+    lastCompletedExercise: null,
     lastExercise: null,
     lastSnoozedAt: null,
     lastTickAt: null
@@ -209,6 +210,11 @@ async function clearReminderPresentation() {
   await chrome.notifications.clear(NOTIFICATION_ID);
 }
 
+async function hasVisibleReminderNotification() {
+  const notifications = await chrome.notifications.getAll();
+  return Boolean(notifications[NOTIFICATION_ID]);
+}
+
 function normalizeNextDue(state, now, settings) {
   const fallback = computeNextDueAtOrAfter(now, settings);
 
@@ -242,7 +248,7 @@ function normalizeNextDue(state, now, settings) {
 async function getRuntimeState(now = new Date()) {
   const settings = await getSettings();
   const rawState = await getState();
-  const pendingReminder = rawState.pendingReminder;
+  let pendingReminder = rawState.pendingReminder;
 
   if (!isValidWindow(settings, now)) {
     await chrome.storage.local.set({
@@ -261,6 +267,17 @@ async function getRuntimeState(now = new Date()) {
       },
       validationError: "INVALID_WINDOW"
     };
+  }
+
+  if (!pendingReminder && await hasVisibleReminderNotification()) {
+    pendingReminder = {
+      exercise: rawState.lastExercise || "Сделайте упражнение",
+      dueAt: rawState.lastTickAt || now.toISOString(),
+      startedAt: rawState.lastTickAt || now.toISOString(),
+      restored: true
+    };
+
+    await chrome.storage.local.set({ pendingReminder });
   }
 
   if (pendingReminder?.exercise && pendingReminder?.dueAt) {
@@ -316,7 +333,7 @@ async function triggerReminder(now, settings) {
   await startAlertLoop(settings);
 }
 
-async function keepPendingReminderAlive(pendingReminder, settings) {
+async function keepPendingReminderAlive(pendingReminder) {
   await setBadgePending(true);
   await showReminderNotification(pendingReminder);
 }
@@ -331,7 +348,8 @@ async function rescheduleFromSettings() {
 
   await chrome.storage.local.set({
     nextDueAt: null,
-    lastTickAt: now.toISOString()
+    lastTickAt: now.toISOString(),
+    lastExercise: null
   });
 
   await tick();
@@ -350,7 +368,7 @@ async function tick() {
   const { settings, state } = runtime;
 
   if (state.pendingReminder) {
-    await keepPendingReminderAlive(state.pendingReminder, settings);
+    await keepPendingReminderAlive(state.pendingReminder);
     return;
   }
 
@@ -367,12 +385,15 @@ async function tick() {
 async function handleDone() {
   const now = new Date();
   const settings = await getSettings();
+  const state = await getState();
+  const completedExercise = state.pendingReminder?.exercise || state.lastExercise || null;
 
   if (!isValidWindow(settings, now)) {
     await chrome.storage.local.set({
       pendingReminder: null,
       nextDueAt: null,
       lastCompletedAt: now.toISOString(),
+      lastCompletedExercise: completedExercise,
       lastTickAt: now.toISOString()
     });
     await clearReminderPresentation();
@@ -385,6 +406,7 @@ async function handleDone() {
     pendingReminder: null,
     nextDueAt: nextDueAt.toISOString(),
     lastCompletedAt: now.toISOString(),
+    lastCompletedExercise: completedExercise,
     lastTickAt: now.toISOString()
   });
 

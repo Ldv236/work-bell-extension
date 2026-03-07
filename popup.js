@@ -25,9 +25,18 @@ function setBusyState(isBusy) {
   snoozeBtn.disabled = isBusy;
 }
 
+function setAlertMode() {
+  statusEl.className = "line alert";
+}
+
+function setNormalMode() {
+  statusEl.className = "line";
+}
+
 function refresh() {
   chrome.runtime.sendMessage({ type: "GET_STATUS" }, (response) => {
     if (!response) {
+      setNormalMode();
       statusEl.textContent = "Статус недоступен";
       exerciseEl.textContent = "";
       nextEl.textContent = "";
@@ -35,6 +44,7 @@ function refresh() {
     }
 
     if (response.validationError === "INVALID_WINDOW") {
+      setAlertMode();
       statusEl.textContent = 'Проверьте настройки: время "с" должно быть раньше времени "по".';
       exerciseEl.textContent = "";
       nextEl.textContent = "";
@@ -45,14 +55,18 @@ function refresh() {
     const pendingReminder = state.pendingReminder;
 
     if (pendingReminder) {
-      statusEl.textContent = "Сейчас идет активное напоминание";
-      exerciseEl.textContent = `Упражнение: ${pendingReminder.exercise}`;
-      nextEl.textContent = `Сигнал начался в ${formatTime(pendingReminder.startedAt)}`;
+      setAlertMode();
+      statusEl.textContent = "Нужно подтвердить упражнение";
+      exerciseEl.textContent = `Сейчас сделать: ${pendingReminder.exercise}`;
+      nextEl.textContent = `Сигнал запущен в ${formatTime(pendingReminder.startedAt)}`;
       return;
     }
 
+    setNormalMode();
     statusEl.textContent = "Ожидание следующего сигнала";
-    exerciseEl.textContent = state.lastExercise ? `Последнее упражнение: ${state.lastExercise}` : "Упражнение появится при следующем сигнале";
+    exerciseEl.textContent = state.lastCompletedExercise
+      ? `Последнее выполненное: ${state.lastCompletedExercise}`
+      : "Пока нет подтвержденных упражнений";
     nextEl.textContent = `Следующий сигнал: ${formatTime(state.nextDueAt)}`;
   });
 }
@@ -70,6 +84,7 @@ snoozeBtn.addEventListener("click", () => {
   chrome.runtime.sendMessage({ type: "SNOOZE", minutes: 5 }, (response) => {
     setBusyState(false);
     if (response?.reason === "NO_PENDING_REMINDER") {
+      setNormalMode();
       statusEl.textContent = "Сейчас нечего откладывать";
       setTimeout(refresh, 1000);
       return;

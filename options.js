@@ -52,8 +52,8 @@ function validate() {
     return 'Время "с" должно быть раньше времени "по".';
   }
 
-  if (Number(intervalMinutesEl.value) < 5) {
-    return "Интервал должен быть не меньше 5 минут.";
+  if (Number(intervalMinutesEl.value) < 1) {
+    return "Интервал должен быть не меньше 1 минуты.";
   }
 
   if (list.length === 0) {

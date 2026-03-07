@@ -12,6 +12,8 @@
       --muted: #6b645c;
       --accent: #b15a2b;
       --border: #ded4c4;
+      --warn: #fff0cc;
+      --warn-border: #efc56d;
     }
 
     body {
@@ -55,6 +57,14 @@
     .muted {
       color: var(--muted);
       font-size: 13px;
+    }
+
+    .alert {
+      padding: 10px;
+      border-radius: 10px;
+      background: var(--warn);
+      border: 1px solid var(--warn-border);
+      font-weight: 700;
     }
 
     .tip {
@@ -107,7 +117,7 @@
         <button id="snoozeBtn" class="secondary">Отложить 5 мин</button>
         <button id="openOptionsBtn" class="secondary" style="grid-column: 1 / -1;">Настройки</button>
       </div>
-      <div class="tip">Если сигнал уже идет, сначала подтвердите упражнение или отложите его, и только потом появится следующий слот.</div>
+      <div class="tip">Во время активного сигнала сначала нажмите "Сделано" или "Отложить 5 мин". Только после этого появится следующий слот.</div>
     </div>
   </div>
   <script src="popup.js"></script>
