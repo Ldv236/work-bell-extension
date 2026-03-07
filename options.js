@@ -46,6 +46,19 @@ const saveBtn = document.getElementById("save");
 const resetQueueBtn = document.getElementById("resetQueue");
 const testSoundBtn = document.getElementById("testSound");
 
+function autoResizeExercises() {
+  exercisesEl.style.height = "auto";
+
+  const computed = window.getComputedStyle(exercisesEl);
+  const lineHeight = parseFloat(computed.lineHeight) || 16;
+  const padding = (parseFloat(computed.paddingTop) || 0) + (parseFloat(computed.paddingBottom) || 0);
+  const border = (parseFloat(computed.borderTopWidth) || 0) + (parseFloat(computed.borderBottomWidth) || 0);
+  const minHeight = lineHeight * 5 + padding + border;
+  const nextHeight = Math.max(minHeight, exercisesEl.scrollHeight);
+
+  exercisesEl.style.height = `${Math.ceil(nextHeight)}px`;
+}
+
 function migrateExercises(exercises) {
   if (!Array.isArray(exercises)) {
     return { exercises: [], changed: false };
@@ -111,6 +124,7 @@ async function load() {
   volumeEl.value = Math.round(Number(settings.volume || DEFAULTS.volume) * 100);
   volumeValueEl.textContent = `${volumeEl.value}%`;
   exercisesEl.value = (settings.exercises || []).join("\n");
+  autoResizeExercises();
 }
 
 function parseExercises(text) {
@@ -231,9 +245,13 @@ volumeEl.addEventListener("input", () => {
   volumeValueEl.textContent = `${volumeEl.value}%`;
 });
 
+exercisesEl.addEventListener("input", autoResizeExercises);
+
 saveBtn.addEventListener("click", () => {
   save(true);
 });
 resetQueueBtn.addEventListener("click", resetQueue);
 testSoundBtn.addEventListener("click", testSound);
 load();
+
+
