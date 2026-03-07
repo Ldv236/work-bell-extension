@@ -81,12 +81,13 @@ async function save() {
   };
 
   await chrome.storage.sync.set(settings);
-  statusEl.textContent = "Сохранено";
+  await chrome.runtime.sendMessage({ type: "SETTINGS_UPDATED" });
+  statusEl.textContent = "Сохранено, расписание пересчитано";
   statusEl.className = "ok";
   setTimeout(() => {
     statusEl.textContent = "";
     statusEl.className = "";
-  }, 1400);
+  }, 1600);
 }
 
 function testSound() {

@@ -74,6 +74,17 @@ function isWithinWindow(moment, settings) {
   return moment >= start && moment <= end;
 }
 
+function isScheduledSlot(moment, settings) {
+  if (!isWithinWindow(moment, settings)) {
+    return false;
+  }
+
+  const start = atDay(settings.startTime, moment);
+  const diffMs = moment.getTime() - start.getTime();
+  const intervalMs = settings.intervalMinutes * 60000;
+  return diffMs % intervalMs === 0;
+}
+
 function computeSlot(now, settings, inclusive) {
   const start = atDay(settings.startTime, now);
   const end = atDay(settings.endTime, now);
@@ -118,6 +129,10 @@ function pickExercise(exercises) {
   return pool[index];
 }
 
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 async function ensureOffscreen() {
   const hasDocument = await chrome.offscreen.hasDocument();
   if (hasDocument) {
@@ -134,9 +149,15 @@ async function ensureOffscreen() {
 async function sendOffscreenMessage(message) {
   try {
     await ensureOffscreen();
+    await delay(80);
     await chrome.runtime.sendMessage(message);
   } catch (error) {
-    console.warn("Offscreen audio error:", error);
+    try {
+      await delay(160);
+      await chrome.runtime.sendMessage(message);
+    } catch (retryError) {
+      console.warn("Offscreen audio error:", retryError || error);
+    }
   }
 }
 
@@ -200,6 +221,10 @@ function normalizeNextDue(state, now, settings) {
     return fallback;
   }
 
+  if (!isScheduledSlot(nextDue, settings)) {
+    return fallback;
+  }
+
   if (nextDue >= now) {
     return nextDue;
   }
@@ -207,7 +232,7 @@ function normalizeNextDue(state, now, settings) {
   const lastTickAt = state.lastTickAt ? new Date(state.lastTickAt) : null;
   const wasRecentlyActive = lastTickAt && now.getTime() - lastTickAt.getTime() <= ACTIVE_TICK_GAP_MS;
 
-  if (wasRecentlyActive && isWithinWindow(nextDue, settings)) {
+  if (wasRecentlyActive) {
     return nextDue;
   }
 
@@ -294,7 +319,23 @@ async function triggerReminder(now, settings) {
 async function keepPendingReminderAlive(pendingReminder, settings) {
   await setBadgePending(true);
   await showReminderNotification(pendingReminder);
-  await startAlertLoop(settings);
+}
+
+async function rescheduleFromSettings() {
+  const now = new Date();
+  const state = await getState();
+
+  if (state.pendingReminder) {
+    return { ok: true, pending: true };
+  }
+
+  await chrome.storage.local.set({
+    nextDueAt: null,
+    lastTickAt: now.toISOString()
+  });
+
+  await tick();
+  return { ok: true, pending: false };
 }
 
 async function tick() {
@@ -415,6 +456,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       const settings = await getSettings();
       await playPreview(settings, message.volume);
       sendResponse({ ok: true });
+      return;
+    }
+
+    if (message?.type === "SETTINGS_UPDATED") {
+      sendResponse(await rescheduleFromSettings());
       return;
     }
 
