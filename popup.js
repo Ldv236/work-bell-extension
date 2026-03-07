@@ -2,7 +2,6 @@
 const exerciseEl = document.getElementById("exercise");
 const nextEl = document.getElementById("next");
 const doneBtn = document.getElementById("doneBtn");
-const snoozeBtn = document.getElementById("snoozeBtn");
 const openOptionsBtn = document.getElementById("openOptionsBtn");
 
 function formatTime(isoString) {
@@ -22,7 +21,6 @@ function formatTime(isoString) {
 
 function setActionState(hasActiveReminder, isBusy) {
   doneBtn.disabled = !hasActiveReminder || isBusy;
-  snoozeBtn.disabled = !hasActiveReminder || isBusy;
 }
 
 function setAlertMode() {
@@ -62,7 +60,7 @@ function refresh() {
       setActionState(true, false);
       statusEl.textContent = "Сейчас нужно сделать упражнение";
       exerciseEl.textContent = `Новое упражнение: ${pendingReminder.exercise}`;
-      nextEl.textContent = `Сигнал запущен в ${formatTime(pendingReminder.startedAt)}`;
+      nextEl.textContent = `Голосовой сигнал запущен в ${formatTime(pendingReminder.startedAt)}`;
       return;
     }
 
@@ -77,21 +75,6 @@ function refresh() {
 doneBtn.addEventListener("click", () => {
   setActionState(true, true);
   chrome.runtime.sendMessage({ type: "MARK_DONE" }, () => {
-    refresh();
-  });
-});
-
-snoozeBtn.addEventListener("click", () => {
-  setActionState(true, true);
-  chrome.runtime.sendMessage({ type: "SNOOZE", minutes: 5 }, (response) => {
-    if (response?.reason === "NO_PENDING_REMINDER") {
-      setNormalMode();
-      setActionState(false, false);
-      statusEl.textContent = "Сейчас нечего откладывать";
-      setTimeout(refresh, 1000);
-      return;
-    }
-
     refresh();
   });
 });

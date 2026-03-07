@@ -1,77 +1,141 @@
 ﻿const OFFSCREEN_START_LOOP = "OFFSCREEN_START_LOOP";
 const OFFSCREEN_STOP_LOOP = "OFFSCREEN_STOP_LOOP";
-const OFFSCREEN_PLAY_ONCE = "OFFSCREEN_PLAY_ONCE";
+const OFFSCREEN_PLAY_PREVIEW = "OFFSCREEN_PLAY_PREVIEW";
 
-let loopAudio = null;
-let replayTimer = null;
+let loopTimer = null;
 let loopConfig = null;
+let fallbackAudio = null;
 
-function clearReplayTimer() {
-  if (replayTimer) {
-    clearTimeout(replayTimer);
-    replayTimer = null;
+function clearLoopTimer() {
+  if (loopTimer) {
+    clearTimeout(loopTimer);
+    loopTimer = null;
   }
 }
 
-function stopLoop() {
-  clearReplayTimer();
+function stopEverything() {
+  clearLoopTimer();
+  speechSynthesis.cancel();
 
-  if (loopAudio) {
-    loopAudio.pause();
-    loopAudio.currentTime = 0;
-    loopAudio.onended = null;
+  if (fallbackAudio) {
+    fallbackAudio.pause();
+    fallbackAudio.currentTime = 0;
   }
 }
 
-function startLoop(soundFile, volume, repeatMs) {
-  stopLoop();
+function pickVoice() {
+  const voices = speechSynthesis.getVoices();
+  if (!voices.length) {
+    return null;
+  }
+
+  return voices.find((voice) => voice.lang && voice.lang.toLowerCase().startsWith("ru"))
+    || voices.find((voice) => voice.lang && voice.lang.toLowerCase().startsWith("en"))
+    || voices[0];
+}
+
+function playFallback(soundFile, volume) {
+  if (!fallbackAudio) {
+    fallbackAudio = new Audio();
+  }
+
+  fallbackAudio.src = chrome.runtime.getURL(soundFile);
+  fallbackAudio.volume = Math.max(0, Math.min(1, Number(volume ?? 0.7)));
+  fallbackAudio.play().catch((error) => console.warn("fallback audio failed", error));
+}
+
+function speakOnce(text, soundFile, volume) {
+  return new Promise((resolve) => {
+    if (!("speechSynthesis" in globalThis) || typeof SpeechSynthesisUtterance === "undefined") {
+      playFallback(soundFile, volume);
+      resolve();
+      return;
+    }
+
+    speechSynthesis.cancel();
+
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = "ru-RU";
+    utterance.volume = Math.max(0, Math.min(1, Number(volume ?? 0.7)));
+    utterance.rate = 1;
+    utterance.pitch = 1;
+
+    const voice = pickVoice();
+    if (voice) {
+      utterance.voice = voice;
+      utterance.lang = voice.lang || utterance.lang;
+    }
+
+    let resolved = false;
+    const finish = () => {
+      if (!resolved) {
+        resolved = true;
+        resolve();
+      }
+    };
+
+    utterance.onend = finish;
+    utterance.onerror = () => {
+      playFallback(soundFile, volume);
+      finish();
+    };
+
+    try {
+      speechSynthesis.speak(utterance);
+      setTimeout(finish, 12000);
+    } catch (error) {
+      console.warn("speech failed", error);
+      playFallback(soundFile, volume);
+      finish();
+    }
+  });
+}
+
+async function startLoop(text, soundFile, volume, repeatMs) {
+  stopEverything();
 
   loopConfig = {
+    text,
     soundFile,
     volume: Math.max(0, Math.min(1, Number(volume ?? 0.7))),
     repeatMs: Math.max(3000, Number(repeatMs || 20000))
   };
 
-  if (!loopAudio) {
-    loopAudio = new Audio();
-  }
+  const playAndSchedule = async () => {
+    if (!loopConfig) {
+      return;
+    }
 
-  loopAudio.src = chrome.runtime.getURL(loopConfig.soundFile);
-  loopAudio.volume = loopConfig.volume;
-  loopAudio.onended = () => {
-    clearReplayTimer();
-    replayTimer = setTimeout(() => {
-      if (!loopConfig) {
-        return;
-      }
-
-      loopAudio.currentTime = 0;
-      loopAudio.play().catch((error) => console.warn("loop replay failed", error));
-    }, loopConfig.repeatMs);
+    await speakOnce(loopConfig.text, loopConfig.soundFile, loopConfig.volume);
+    clearLoopTimer();
+    loopTimer = setTimeout(playAndSchedule, loopConfig.repeatMs);
   };
 
-  loopAudio.play().catch((error) => console.warn("loop play failed", error));
+  await playAndSchedule();
 }
 
-function playOnce(soundFile, volume) {
-  const previewAudio = new Audio(chrome.runtime.getURL(soundFile));
-  previewAudio.volume = Math.max(0, Math.min(1, Number(volume ?? 0.7)));
-  previewAudio.play().catch((error) => console.warn("preview play failed", error));
+async function playPreview(text, soundFile, volume) {
+  stopEverything();
+  await speakOnce(text, soundFile, volume);
 }
+
+speechSynthesis.onvoiceschanged = () => {
+  speechSynthesis.getVoices();
+};
 
 chrome.runtime.onMessage.addListener((message) => {
   if (message?.type === OFFSCREEN_START_LOOP) {
-    startLoop(message.soundFile, message.volume, message.repeatMs);
+    startLoop(message.text, message.soundFile, message.volume, message.repeatMs);
     return;
   }
 
   if (message?.type === OFFSCREEN_STOP_LOOP) {
     loopConfig = null;
-    stopLoop();
+    stopEverything();
     return;
   }
 
-  if (message?.type === OFFSCREEN_PLAY_ONCE) {
-    playOnce(message.soundFile, message.volume);
+  if (message?.type === OFFSCREEN_PLAY_PREVIEW) {
+    playPreview(message.text, message.soundFile, message.volume);
   }
 });

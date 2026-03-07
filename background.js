@@ -19,11 +19,11 @@
 
 const TICK_ALARM = "work-bell-tick";
 const NOTIFICATION_ID = "work-bell-reminder";
-const SOUND_REPEAT_MS = 20000;
+const REMINDER_REPEAT_MS = 20000;
 const ACTIVE_TICK_GAP_MS = 2 * 60000;
 const OFFSCREEN_START_LOOP = "OFFSCREEN_START_LOOP";
 const OFFSCREEN_STOP_LOOP = "OFFSCREEN_STOP_LOOP";
-const OFFSCREEN_PLAY_ONCE = "OFFSCREEN_PLAY_ONCE";
+const OFFSCREEN_PLAY_PREVIEW = "OFFSCREEN_PLAY_PREVIEW";
 
 async function getSettings() {
   const raw = await chrome.storage.sync.get({ ...DEFAULTS });
@@ -46,9 +46,7 @@ async function getState() {
     nextDueAt: null,
     pendingReminder: null,
     lastCompletedAt: null,
-    lastCompletedExercise: null,
     lastExercise: null,
-    lastSnoozedAt: null,
     lastTickAt: null
   });
 }
@@ -134,6 +132,10 @@ function delay(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function buildReminderSpeech(exercise) {
+  return `Пора размяться. Сделайте упражнение: ${exercise}. Подтвердите выполнение в расширении.`;
+}
+
 async function ensureOffscreen() {
   const hasDocument = await chrome.offscreen.hasDocument();
   if (hasDocument) {
@@ -143,7 +145,7 @@ async function ensureOffscreen() {
   await chrome.offscreen.createDocument({
     url: "offscreen.html",
     reasons: ["AUDIO_PLAYBACK"],
-    justification: "Loop reminder sound until the exercise is confirmed"
+    justification: "Speak or play the reminder until the exercise is confirmed"
   });
 }
 
@@ -157,29 +159,31 @@ async function sendOffscreenMessage(message) {
       await delay(160);
       await chrome.runtime.sendMessage(message);
     } catch (retryError) {
-      console.warn("Offscreen audio error:", retryError || error);
+      console.warn("Offscreen reminder error:", retryError || error);
     }
   }
 }
 
-async function startAlertLoop(settings) {
+async function startReminderLoop(settings, exercise) {
   await sendOffscreenMessage({
     type: OFFSCREEN_START_LOOP,
+    text: buildReminderSpeech(exercise),
     soundFile: settings.soundFile,
     volume: settings.volume,
-    repeatMs: SOUND_REPEAT_MS
+    repeatMs: REMINDER_REPEAT_MS
   });
 }
 
-async function stopAlertLoop() {
+async function stopReminderLoop() {
   await sendOffscreenMessage({ type: OFFSCREEN_STOP_LOOP });
 }
 
-async function playPreview(settings, volumeOverride) {
+async function playPreview(settings) {
   await sendOffscreenMessage({
-    type: OFFSCREEN_PLAY_ONCE,
+    type: OFFSCREEN_PLAY_PREVIEW,
+    text: "Проверка сигнала. Пора размяться и сделать упражнение.",
     soundFile: settings.soundFile,
-    volume: Math.max(0, Math.min(1, Number(volumeOverride ?? settings.volume)))
+    volume: settings.volume
   });
 }
 
@@ -193,11 +197,10 @@ async function showReminderNotification(reminder) {
     type: "basic",
     iconUrl: "icons/128.png",
     title: "Пора встать от компьютера",
-    message: `Сделайте упражнение: ${reminder.exercise}`,
-    contextMessage: "Сигнал будет повторяться, пока вы не подтвердите выполнение.",
+    message: `Сейчас сделать: ${reminder.exercise}`,
+    contextMessage: "Сигнал будет повторяться, пока вы не нажмете " + '"Сделать"' + ".",
     buttons: [
-      { title: "Сделать" },
-      { title: "Отложить на 5 минут" }
+      { title: "Сделать" }
     ],
     priority: 2,
     requireInteraction: true
@@ -205,7 +208,7 @@ async function showReminderNotification(reminder) {
 }
 
 async function clearReminderPresentation() {
-  await stopAlertLoop();
+  await stopReminderLoop();
   await setBadgePending(false);
   await chrome.notifications.clear(NOTIFICATION_ID);
 }
@@ -334,12 +337,13 @@ async function triggerReminder(now, settings) {
 
   await setBadgePending(true);
   await showReminderNotification(reminder);
-  await startAlertLoop(settings);
+  await startReminderLoop(settings, reminder.exercise);
 }
 
-async function keepPendingReminderAlive(pendingReminder) {
+async function keepPendingReminderAlive(pendingReminder, settings) {
   await setBadgePending(true);
   await showReminderNotification(pendingReminder);
+  await startReminderLoop(settings, pendingReminder.exercise);
 }
 
 async function rescheduleFromSettings() {
@@ -372,7 +376,7 @@ async function tick() {
   const { settings, state } = runtime;
 
   if (state.pendingReminder) {
-    await keepPendingReminderAlive(state.pendingReminder);
+    await keepPendingReminderAlive(state.pendingReminder, settings);
     return;
   }
 
@@ -389,15 +393,12 @@ async function tick() {
 async function handleDone() {
   const now = new Date();
   const settings = await getSettings();
-  const state = await getState();
-  const completedExercise = state.pendingReminder?.exercise || state.lastExercise || null;
 
   if (!isValidWindow(settings, now)) {
     await chrome.storage.local.set({
       pendingReminder: null,
       nextDueAt: null,
       lastCompletedAt: now.toISOString(),
-      lastCompletedExercise: completedExercise,
       lastTickAt: now.toISOString()
     });
     await clearReminderPresentation();
@@ -410,32 +411,11 @@ async function handleDone() {
     pendingReminder: null,
     nextDueAt: nextDueAt.toISOString(),
     lastCompletedAt: now.toISOString(),
-    lastCompletedExercise: completedExercise,
     lastTickAt: now.toISOString()
   });
 
   await clearReminderPresentation();
   return { ok: true, nextDueAt: nextDueAt.toISOString() };
-}
-
-async function handleSnooze(minutes = 5) {
-  const now = new Date();
-  const state = await getState();
-
-  if (!state.pendingReminder) {
-    return { ok: false, reason: "NO_PENDING_REMINDER" };
-  }
-
-  const snoozedUntil = new Date(now.getTime() + minutes * 60000);
-  await chrome.storage.local.set({
-    pendingReminder: null,
-    nextDueAt: snoozedUntil.toISOString(),
-    lastSnoozedAt: now.toISOString(),
-    lastTickAt: now.toISOString()
-  });
-
-  await clearReminderPresentation();
-  return { ok: true, nextDueAt: snoozedUntil.toISOString() };
 }
 
 chrome.notifications.onButtonClicked.addListener(async (notificationId, buttonIndex) => {
@@ -445,11 +425,6 @@ chrome.notifications.onButtonClicked.addListener(async (notificationId, buttonIn
 
   if (buttonIndex === 0) {
     await handleDone();
-    return;
-  }
-
-  if (buttonIndex === 1) {
-    await handleSnooze(5);
   }
 });
 
@@ -473,14 +448,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       return;
     }
 
-    if (message?.type === "SNOOZE") {
-      sendResponse(await handleSnooze(Number(message.minutes || 5)));
-      return;
-    }
-
     if (message?.type === "PLAY_PREVIEW") {
       const settings = await getSettings();
-      await playPreview(settings, message.volume);
+      await playPreview(settings);
       sendResponse({ ok: true });
       return;
     }
