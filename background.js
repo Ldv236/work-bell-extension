@@ -21,8 +21,8 @@ const TICK_ALARM = "work-bell-tick";
 const NOTIFICATION_ID = "work-bell-reminder";
 const REMINDER_REPEAT_MS = 20000;
 const ACTIVE_TICK_GAP_MS = 2 * 60000;
-const REMINDER_WINDOW_WIDTH = 420;
-const REMINDER_WINDOW_HEIGHT = 360;
+const REMINDER_WINDOW_WIDTH = 460;
+const REMINDER_WINDOW_HEIGHT = 430;
 const OFFSCREEN_START_LOOP = "OFFSCREEN_START_LOOP";
 const OFFSCREEN_STOP_LOOP = "OFFSCREEN_STOP_LOOP";
 const OFFSCREEN_PLAY_PREVIEW = "OFFSCREEN_PLAY_PREVIEW";
@@ -531,3 +531,4 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
     await tick();
   }
 });
+
