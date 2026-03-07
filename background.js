@@ -207,6 +207,18 @@ async function showReminderNotification(reminder) {
   });
 }
 
+async function openReminderPopup() {
+  if (typeof chrome.action.openPopup !== "function") {
+    return;
+  }
+
+  try {
+    await chrome.action.openPopup();
+  } catch (error) {
+    console.warn("Popup open failed:", error);
+  }
+}
+
 async function clearReminderPresentation() {
   await stopReminderLoop();
   await setBadgePending(false);
@@ -338,6 +350,7 @@ async function triggerReminder(now, settings) {
   await setBadgePending(true);
   await showReminderNotification(reminder);
   await startReminderLoop(settings, reminder.exercise);
+  await openReminderPopup();
 }
 
 async function keepPendingReminderAlive(pendingReminder, settings) {
@@ -433,7 +446,7 @@ chrome.notifications.onClicked.addListener(async (notificationId) => {
     return;
   }
 
-  await chrome.runtime.openOptionsPage();
+  await openReminderPopup();
 });
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {

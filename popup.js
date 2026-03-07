@@ -76,7 +76,7 @@ function refresh() {
 doneBtn.addEventListener("click", () => {
   setActionState(true, true);
   chrome.runtime.sendMessage({ type: "MARK_DONE" }, () => {
-    refresh();
+    window.close();
   });
 });
 
