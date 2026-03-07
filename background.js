@@ -149,6 +149,12 @@ function todayKey(now = new Date()) {
   return `${year}-${month}-${day}`;
 }
 
+function isSameCalendarDay(left, right) {
+  return left.getFullYear() === right.getFullYear()
+    && left.getMonth() === right.getMonth()
+    && left.getDate() === right.getDate();
+}
+
 function isValidWindow(settings, baseDate = new Date()) {
   return atDay(settings.startTime, baseDate).getTime() < atDay(settings.endTime, baseDate).getTime();
 }
@@ -558,6 +564,9 @@ async function refreshPendingReminderPresentation(pendingReminder, settings, opt
   if (options.forceNotification || !notificationVisible) {
     await showReminderNotification(pendingReminder);
   }
+  if (options.forceWindow) {
+    await openReminderWindow();
+  }
   await ensureRepeatAlarmScheduled(settings.repeatReminderMinutes);
 }
 
@@ -566,6 +575,19 @@ async function getRuntimeState(now = new Date()) {
   const rawState = await getState();
   const stateWithDay = await normalizeDayState(rawState, settings, now);
   let pendingReminder = stateWithDay.pendingReminder;
+
+  if (pendingReminder?.dueAt) {
+    const reminderDueAt = new Date(pendingReminder.dueAt);
+    if (!Number.isNaN(reminderDueAt.getTime()) && !isSameCalendarDay(reminderDueAt, now)) {
+      pendingReminder = null;
+      await chrome.storage.local.set({
+        pendingReminder: null,
+        nextDueAt: null,
+        reminderWindowId: null
+      });
+      await clearReminderPresentation();
+    }
+  }
 
   if (!isValidWindow(settings, now)) {
     await chrome.storage.local.set({
@@ -854,6 +876,18 @@ async function tick() {
 
 async function bootstrap() {
   chrome.alarms.create(TICK_ALARM, { periodInMinutes: 1 });
+  const runtime = await getRuntimeState(new Date());
+  if (runtime.validationError === "INVALID_WINDOW") {
+    await clearReminderPresentation();
+    return;
+  }
+  if (runtime.state.pendingReminder) {
+    await refreshPendingReminderPresentation(runtime.state.pendingReminder, runtime.settings, {
+      forceNotification: true,
+      forceWindow: true
+    });
+    return;
+  }
   await tick();
 }
 
@@ -869,3 +903,4 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
     await handleRepeatAlarm();
   }
 });
+
