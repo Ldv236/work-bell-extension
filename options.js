@@ -1,12 +1,17 @@
-﻿const DEFAULTS = {
+﻿const LEGACY_REMINDER_INTRO_TEXT = "Пора размяться.";
+const LEGACY_REMINDER_OUTRO_TEXT = "Подтвердите в приложении.";
+const LEGACY_BAND_EXERCISE = "упражнения с резинкой на плечевые суставы/связки";
+const BAND_EXERCISE_ROTATION = "с резинкой на плечевые суставы (ротация)";
+const BAND_EXERCISE_ABDUCTION = "с резинкой на плечевые суставы (отведения)";
+const DEFAULTS = {
   startTime: "09:00",
   endTime: "22:00",
   intervalMinutes: 60,
   repeatReminderMinutes: 3,
   scheduleMode: "after_confirmation",
   audioMode: "voice",
-  reminderIntroText: "Пора размяться.",
-  reminderOutroText: "Подтвердите в приложении.",
+  reminderIntroText: "Пора размяться. Выполни упражнение",
+  reminderOutroText: ". Подтвердите в приложении.",
   volume: 0.7,
   soundFile: "sounds/bell.wav",
   exercises: [
@@ -16,7 +21,8 @@
     "пинки перекрестные",
     "пинки боковые",
     "хлопки под бедром",
-    "упражнения с резинкой на плечевые суставы/связки",
+    BAND_EXERCISE_ROTATION,
+    BAND_EXERCISE_ABDUCTION,
     "скакалка",
     "жонглирование"
   ]
@@ -38,8 +44,58 @@ const saveBtn = document.getElementById("save");
 const resetQueueBtn = document.getElementById("resetQueue");
 const testSoundBtn = document.getElementById("testSound");
 
+function migrateExercises(exercises) {
+  if (!Array.isArray(exercises)) {
+    return { exercises: [], changed: false };
+  }
+
+  const migrated = [];
+  let changed = false;
+
+  for (const item of exercises) {
+    const normalized = String(item).trim();
+    if (!normalized) {
+      continue;
+    }
+
+    if (normalized === LEGACY_BAND_EXERCISE) {
+      migrated.push(BAND_EXERCISE_ROTATION, BAND_EXERCISE_ABDUCTION);
+      changed = true;
+      continue;
+    }
+
+    migrated.push(normalized);
+  }
+
+  return { exercises: migrated, changed };
+}
+
 async function load() {
-  const settings = await chrome.storage.sync.get({ ...DEFAULTS });
+  const rawSettings = await chrome.storage.sync.get({ ...DEFAULTS });
+  const migratedExercises = migrateExercises(rawSettings.exercises);
+  const reminderIntroTextRaw = String(rawSettings.reminderIntroText ?? DEFAULTS.reminderIntroText).trim();
+  const reminderOutroTextRaw = String(rawSettings.reminderOutroText ?? DEFAULTS.reminderOutroText).trim();
+  const settings = {
+    ...rawSettings,
+    exercises: migratedExercises.exercises.length > 0 ? migratedExercises.exercises : DEFAULTS.exercises,
+    reminderIntroText: reminderIntroTextRaw === LEGACY_REMINDER_INTRO_TEXT
+      ? DEFAULTS.reminderIntroText
+      : (reminderIntroTextRaw || DEFAULTS.reminderIntroText),
+    reminderOutroText: reminderOutroTextRaw === LEGACY_REMINDER_OUTRO_TEXT
+      ? DEFAULTS.reminderOutroText
+      : reminderOutroTextRaw
+  };
+
+  if (migratedExercises.changed
+    || reminderIntroTextRaw === LEGACY_REMINDER_INTRO_TEXT
+    || reminderOutroTextRaw === LEGACY_REMINDER_OUTRO_TEXT) {
+    await chrome.storage.sync.set({
+      exercises: settings.exercises,
+      reminderIntroText: settings.reminderIntroText,
+      reminderOutroText: settings.reminderOutroText
+    });
+  }
+
   startTimeEl.value = settings.startTime;
   endTimeEl.value = settings.endTime;
   scheduleModeEl.value = settings.scheduleMode || DEFAULTS.scheduleMode;

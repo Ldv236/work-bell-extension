@@ -1,12 +1,17 @@
-﻿const DEFAULTS = {
+﻿const LEGACY_REMINDER_INTRO_TEXT = "Пора размяться.";
+const LEGACY_REMINDER_OUTRO_TEXT = "Подтвердите в приложении.";
+const LEGACY_BAND_EXERCISE = "упражнения с резинкой на плечевые суставы/связки";
+const BAND_EXERCISE_ROTATION = "с резинкой на плечевые суставы (ротация)";
+const BAND_EXERCISE_ABDUCTION = "с резинкой на плечевые суставы (отведения)";
+const DEFAULTS = {
   startTime: "09:00",
   endTime: "22:00",
   intervalMinutes: 60,
   repeatReminderMinutes: 3,
   scheduleMode: "after_confirmation",
   audioMode: "voice",
-  reminderIntroText: "Пора размяться.",
-  reminderOutroText: "Подтвердите в приложении.",
+  reminderIntroText: "Пора размяться. Выполни упражнение",
+  reminderOutroText: ". Подтвердите в приложении.",
   volume: 0.7,
   soundFile: "sounds/bell.wav",
   exercises: [
@@ -16,7 +21,8 @@
     "пинки перекрестные",
     "пинки боковые",
     "хлопки под бедром",
-    "упражнения с резинкой на плечевые суставы/связки",
+    BAND_EXERCISE_ROTATION,
+    BAND_EXERCISE_ABDUCTION,
     "скакалка",
     "жонглирование"
   ]
@@ -35,15 +41,58 @@ const REMINDER_WINDOW_HEIGHT = 660;
 const OFFSCREEN_PLAY = "OFFSCREEN_PLAY";
 const OFFSCREEN_PLAY_PREVIEW = "OFFSCREEN_PLAY_PREVIEW";
 
+function migrateExercises(exercises) {
+  if (!Array.isArray(exercises)) {
+    return { exercises: [], changed: false };
+  }
+
+  const migrated = [];
+  let changed = false;
+
+  for (const item of exercises) {
+    const normalized = String(item).trim();
+    if (!normalized) {
+      continue;
+    }
+
+    if (normalized === LEGACY_BAND_EXERCISE) {
+      migrated.push(BAND_EXERCISE_ROTATION, BAND_EXERCISE_ABDUCTION);
+      changed = true;
+      continue;
+    }
+
+    migrated.push(normalized);
+  }
+
+  return { exercises: migrated, changed };
+}
+
 async function getSettings() {
   const raw = await chrome.storage.sync.get({ ...DEFAULTS });
-  const exercises = Array.isArray(raw.exercises)
-    ? raw.exercises.map((item) => String(item).trim()).filter(Boolean)
-    : [];
   const scheduleMode = raw.scheduleMode === SCHEDULE_MODE_FIXED
     ? SCHEDULE_MODE_FIXED
     : SCHEDULE_MODE_AFTER_CONFIRMATION;
   const audioMode = raw.audioMode === AUDIO_MODE_BEEP ? AUDIO_MODE_BEEP : AUDIO_MODE_VOICE;
+  const migratedExercises = migrateExercises(raw.exercises);
+  const reminderIntroTextRaw = String(raw.reminderIntroText ?? DEFAULTS.reminderIntroText).trim();
+  const reminderOutroTextRaw = String(raw.reminderOutroText ?? DEFAULTS.reminderOutroText).trim();
+  const reminderIntroText = reminderIntroTextRaw === LEGACY_REMINDER_INTRO_TEXT
+    ? DEFAULTS.reminderIntroText
+    : (reminderIntroTextRaw || DEFAULTS.reminderIntroText);
+  const reminderOutroText = reminderOutroTextRaw === LEGACY_REMINDER_OUTRO_TEXT
+    ? DEFAULTS.reminderOutroText
+    : reminderOutroTextRaw;
+  const exercises = migratedExercises.exercises.length > 0 ? migratedExercises.exercises : DEFAULTS.exercises;
+
+  if (migratedExercises.changed
+    || reminderIntroTextRaw === LEGACY_REMINDER_INTRO_TEXT
+    || reminderOutroTextRaw === LEGACY_REMINDER_OUTRO_TEXT) {
+    await chrome.storage.sync.set({
+      exercises,
+      reminderIntroText,
+      reminderOutroText
+    });
+  }
 
   return {
     startTime: raw.startTime,
@@ -52,11 +101,11 @@ async function getSettings() {
     repeatReminderMinutes: Math.max(1, Number(raw.repeatReminderMinutes || DEFAULTS.repeatReminderMinutes)),
     scheduleMode,
     audioMode,
-    reminderIntroText: String(raw.reminderIntroText ?? DEFAULTS.reminderIntroText).trim() || DEFAULTS.reminderIntroText,
-    reminderOutroText: String(raw.reminderOutroText ?? DEFAULTS.reminderOutroText).trim(),
+    reminderIntroText,
+    reminderOutroText,
     volume: Math.max(0, Math.min(1, Number(raw.volume ?? DEFAULTS.volume))),
     soundFile: DEFAULTS.soundFile,
-    exercises: exercises.length > 0 ? exercises : DEFAULTS.exercises
+    exercises
   };
 }
 
