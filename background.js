@@ -21,6 +21,8 @@ const TICK_ALARM = "work-bell-tick";
 const NOTIFICATION_ID = "work-bell-reminder";
 const REMINDER_REPEAT_MS = 20000;
 const ACTIVE_TICK_GAP_MS = 2 * 60000;
+const REMINDER_WINDOW_WIDTH = 420;
+const REMINDER_WINDOW_HEIGHT = 360;
 const OFFSCREEN_START_LOOP = "OFFSCREEN_START_LOOP";
 const OFFSCREEN_STOP_LOOP = "OFFSCREEN_STOP_LOOP";
 const OFFSCREEN_PLAY_PREVIEW = "OFFSCREEN_PLAY_PREVIEW";
@@ -47,7 +49,8 @@ async function getState() {
     pendingReminder: null,
     lastCompletedAt: null,
     lastExercise: null,
-    lastTickAt: null
+    lastTickAt: null,
+    reminderWindowId: null
   });
 }
 
@@ -208,22 +211,51 @@ async function showReminderNotification(reminder) {
   });
 }
 
-async function openReminderPopup() {
-  if (typeof chrome.action.openPopup !== "function") {
-    return;
+async function openReminderWindow() {
+  const state = await getState();
+  const existingWindowId = Number(state.reminderWindowId || 0);
+
+  if (existingWindowId > 0) {
+    try {
+      await chrome.windows.update(existingWindowId, { focused: true, drawAttention: true });
+      return;
+    } catch (error) {
+      await chrome.storage.local.set({ reminderWindowId: null });
+    }
   }
 
-  try {
-    await chrome.action.openPopup();
-  } catch (error) {
-    console.warn("Popup open failed:", error);
+  const url = chrome.runtime.getURL("popup.html?mode=reminder");
+  const createdWindow = await chrome.windows.create({
+    url,
+    type: "popup",
+    focused: true,
+    width: REMINDER_WINDOW_WIDTH,
+    height: REMINDER_WINDOW_HEIGHT
+  });
+
+  await chrome.storage.local.set({ reminderWindowId: createdWindow?.id ?? null });
+}
+
+async function closeReminderWindow() {
+  const state = await getState();
+  const existingWindowId = Number(state.reminderWindowId || 0);
+
+  if (existingWindowId > 0) {
+    try {
+      await chrome.windows.remove(existingWindowId);
+    } catch (error) {
+      console.warn("Reminder window close failed:", error);
+    }
   }
+
+  await chrome.storage.local.set({ reminderWindowId: null });
 }
 
 async function clearReminderPresentation() {
   await stopReminderLoop();
   await setBadgePending(false);
   await chrome.notifications.clear(NOTIFICATION_ID);
+  await closeReminderWindow();
 }
 
 async function hasVisibleReminderNotification() {
@@ -351,7 +383,7 @@ async function triggerReminder(now, settings) {
   await setBadgePending(true);
   await showReminderNotification(reminder);
   await startReminderLoop(settings, reminder);
-  await openReminderPopup();
+  await openReminderWindow();
 }
 
 async function keepPendingReminderAlive(pendingReminder, settings) {
@@ -447,7 +479,14 @@ chrome.notifications.onClicked.addListener(async (notificationId) => {
     return;
   }
 
-  await openReminderPopup();
+  await openReminderWindow();
+});
+
+chrome.windows.onRemoved.addListener(async (windowId) => {
+  const state = await getState();
+  if (windowId === state.reminderWindowId) {
+    await chrome.storage.local.set({ reminderWindowId: null });
+  }
 });
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
