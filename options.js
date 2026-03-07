@@ -3,6 +3,7 @@
   endTime: "22:00",
   intervalMinutes: 60,
   repeatReminderMinutes: 3,
+  scheduleMode: "after_confirmation",
   reminderIntroText: "Пора размяться.",
   reminderOutroText: "Подтвердите в приложении.",
   volume: 0.7,
@@ -22,6 +23,7 @@
 
 const startTimeEl = document.getElementById("startTime");
 const endTimeEl = document.getElementById("endTime");
+const scheduleModeEl = document.getElementById("scheduleMode");
 const intervalMinutesEl = document.getElementById("intervalMinutes");
 const repeatReminderMinutesEl = document.getElementById("repeatReminderMinutes");
 const reminderIntroTextEl = document.getElementById("reminderIntroText");
@@ -38,6 +40,7 @@ async function load() {
   const settings = await chrome.storage.sync.get({ ...DEFAULTS });
   startTimeEl.value = settings.startTime;
   endTimeEl.value = settings.endTime;
+  scheduleModeEl.value = settings.scheduleMode || DEFAULTS.scheduleMode;
   intervalMinutesEl.value = settings.intervalMinutes;
   repeatReminderMinutesEl.value = settings.repeatReminderMinutes;
   reminderIntroTextEl.value = settings.reminderIntroText;
@@ -60,6 +63,10 @@ function validate() {
 
   if (startTimeEl.value >= endTimeEl.value) {
     return 'Время "с" должно быть раньше времени "по".';
+  }
+
+  if (!["after_confirmation", "fixed_slots"].includes(scheduleModeEl.value)) {
+    return "Выберите корректный режим интервала.";
   }
 
   if (Number(intervalMinutesEl.value) < 1) {
@@ -85,6 +92,7 @@ function collectSettings() {
   return {
     startTime: startTimeEl.value,
     endTime: endTimeEl.value,
+    scheduleMode: scheduleModeEl.value,
     intervalMinutes: Number(intervalMinutesEl.value),
     repeatReminderMinutes: Number(repeatReminderMinutesEl.value),
     reminderIntroText: String(reminderIntroTextEl.value).trim(),

@@ -3,6 +3,7 @@
   endTime: "22:00",
   intervalMinutes: 60,
   repeatReminderMinutes: 3,
+  scheduleMode: "after_confirmation",
   reminderIntroText: "Пора размяться.",
   reminderOutroText: "Подтвердите в приложении.",
   volume: 0.7,
@@ -20,6 +21,8 @@
   ]
 };
 
+const SCHEDULE_MODE_FIXED = "fixed_slots";
+const SCHEDULE_MODE_AFTER_CONFIRMATION = "after_confirmation";
 const TICK_ALARM = "work-bell-tick";
 const REPEAT_ALARM = "work-bell-repeat";
 const NOTIFICATION_ID = "work-bell-reminder";
@@ -34,12 +37,16 @@ async function getSettings() {
   const exercises = Array.isArray(raw.exercises)
     ? raw.exercises.map((item) => String(item).trim()).filter(Boolean)
     : [];
+  const scheduleMode = raw.scheduleMode === SCHEDULE_MODE_FIXED
+    ? SCHEDULE_MODE_FIXED
+    : SCHEDULE_MODE_AFTER_CONFIRMATION;
 
   return {
     startTime: raw.startTime,
     endTime: raw.endTime,
     intervalMinutes: Math.max(1, Number(raw.intervalMinutes || DEFAULTS.intervalMinutes)),
     repeatReminderMinutes: Math.max(1, Number(raw.repeatReminderMinutes || DEFAULTS.repeatReminderMinutes)),
+    scheduleMode,
     reminderIntroText: String(raw.reminderIntroText ?? DEFAULTS.reminderIntroText).trim() || DEFAULTS.reminderIntroText,
     reminderOutroText: String(raw.reminderOutroText ?? DEFAULTS.reminderOutroText).trim(),
     volume: Math.max(0, Math.min(1, Number(raw.volume ?? DEFAULTS.volume))),
@@ -138,6 +145,48 @@ function computeNextDueAtOrAfter(now, settings) {
 
 function computeNextDueAfter(now, settings) {
   return computeSlot(now, settings, false);
+}
+
+function computeRelativeInitialDue(now, settings) {
+  const start = atDay(settings.startTime, now);
+  const end = atDay(settings.endTime, now);
+
+  if (now < start) {
+    return start;
+  }
+
+  if (now >= end) {
+    const tomorrow = new Date(start);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    return tomorrow;
+  }
+
+  return now;
+}
+
+function computeRelativeDueAfter(baseMoment, settings) {
+  const start = atDay(settings.startTime, baseMoment);
+  const end = atDay(settings.endTime, baseMoment);
+  const intervalMs = settings.intervalMinutes * 60000;
+
+  if (baseMoment < start) {
+    return start;
+  }
+
+  if (baseMoment >= end) {
+    const tomorrow = new Date(start);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    return tomorrow;
+  }
+
+  const candidate = new Date(baseMoment.getTime() + intervalMs);
+  if (candidate < end) {
+    return candidate;
+  }
+
+  const tomorrow = new Date(start);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  return tomorrow;
 }
 
 function sanitizeQueue(queue, fallbackExercises) {
@@ -289,6 +338,16 @@ async function scheduleRepeatAlarm(repeatReminderMinutes) {
   });
 }
 
+async function ensureRepeatAlarmScheduled(repeatReminderMinutes) {
+  const existingAlarm = await chrome.alarms.get(REPEAT_ALARM);
+  const expected = Number(repeatReminderMinutes);
+  const current = Number(existingAlarm?.periodInMinutes || 0);
+
+  if (!existingAlarm || Math.abs(current - expected) > 0.001) {
+    await scheduleRepeatAlarm(repeatReminderMinutes);
+  }
+}
+
 async function clearRepeatAlarm() {
   await chrome.alarms.clear(REPEAT_ALARM);
 }
@@ -366,8 +425,14 @@ async function hasVisibleReminderNotification() {
   return Boolean(notifications[NOTIFICATION_ID]);
 }
 
+function computeFallbackNextDue(now, settings) {
+  return settings.scheduleMode === SCHEDULE_MODE_FIXED
+    ? computeNextDueAtOrAfter(now, settings)
+    : computeRelativeInitialDue(now, settings);
+}
+
 function normalizeNextDue(state, now, settings) {
-  const fallback = computeNextDueAtOrAfter(now, settings);
+  const fallback = computeFallbackNextDue(now, settings);
 
   if (!state.nextDueAt) {
     return fallback;
@@ -378,7 +443,22 @@ function normalizeNextDue(state, now, settings) {
     return fallback;
   }
 
-  if (!isScheduledSlot(nextDue, settings)) {
+  const lastTickAt = state.lastTickAt ? new Date(state.lastTickAt) : null;
+  const wasRecentlyActive = lastTickAt && now.getTime() - lastTickAt.getTime() <= ACTIVE_TICK_GAP_MS;
+
+  if (settings.scheduleMode === SCHEDULE_MODE_FIXED) {
+    if (!isScheduledSlot(nextDue, settings)) {
+      return fallback;
+    }
+
+    if (nextDue >= now) {
+      return nextDue;
+    }
+
+    if (wasRecentlyActive) {
+      return nextDue;
+    }
+
     return fallback;
   }
 
@@ -386,14 +466,11 @@ function normalizeNextDue(state, now, settings) {
     return nextDue;
   }
 
-  const lastTickAt = state.lastTickAt ? new Date(state.lastTickAt) : null;
-  const wasRecentlyActive = lastTickAt && now.getTime() - lastTickAt.getTime() <= ACTIVE_TICK_GAP_MS;
-
   if (wasRecentlyActive) {
     return nextDue;
   }
 
-  return fallback;
+  return computeRelativeDueAfter(now, settings);
 }
 
 function buildTodaySummary(completedToday) {
@@ -407,10 +484,13 @@ function buildTodaySummary(completedToday) {
     .sort((left, right) => right.count - left.count || left.exercise.localeCompare(right.exercise, "ru"));
 }
 
-async function refreshPendingReminderPresentation(pendingReminder, settings) {
+async function refreshPendingReminderPresentation(pendingReminder, settings, options = {}) {
   await setBadgePending(true);
-  await showReminderNotification(pendingReminder);
-  await scheduleRepeatAlarm(settings.repeatReminderMinutes);
+  const notificationVisible = await hasVisibleReminderNotification();
+  if (options.forceNotification || !notificationVisible) {
+    await showReminderNotification(pendingReminder);
+  }
+  await ensureRepeatAlarmScheduled(settings.repeatReminderMinutes);
 }
 
 async function getRuntimeState(now = new Date()) {
@@ -544,7 +624,9 @@ async function resolveReminder(countExercise) {
     return { ok: true, nextDueAt: null };
   }
 
-  const nextDueAt = computeNextDueAfter(now, settings);
+  const nextDueAt = settings.scheduleMode === SCHEDULE_MODE_FIXED
+    ? computeNextDueAfter(now, settings)
+    : computeRelativeDueAfter(now, settings);
 
   await chrome.storage.local.set({
     pendingReminder: null,
@@ -636,7 +718,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message?.type === "SETTINGS_UPDATED") {
       const runtime = await getRuntimeState(new Date());
       if (runtime.state.pendingReminder) {
-        await refreshPendingReminderPresentation(runtime.state.pendingReminder, runtime.settings);
+        await refreshPendingReminderPresentation(runtime.state.pendingReminder, runtime.settings, { forceNotification: true });
       } else {
         await chrome.storage.local.set({
           nextDueAt: null,
@@ -692,7 +774,7 @@ async function tick() {
     return;
   }
 
-  const nextDueAt = state.nextDueAt ? new Date(state.nextDueAt) : computeNextDueAtOrAfter(now, settings);
+  const nextDueAt = state.nextDueAt ? new Date(state.nextDueAt) : computeFallbackNextDue(now, settings);
 
   if (now >= nextDueAt && isWithinWindow(nextDueAt, settings)) {
     await triggerReminder(now, settings, state);
