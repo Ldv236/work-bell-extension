@@ -3,6 +3,7 @@ const exerciseEl = document.getElementById("exercise");
 const nextEl = document.getElementById("next");
 const doneBtn = document.getElementById("doneBtn");
 const openOptionsBtn = document.getElementById("openOptionsBtn");
+let refreshTimer = null;
 
 function formatTime(isoString) {
   if (!isoString) {
@@ -59,7 +60,7 @@ function refresh() {
       setAlertMode();
       setActionState(true, false);
       statusEl.textContent = "Сейчас нужно сделать упражнение";
-      exerciseEl.textContent = `Новое упражнение: ${pendingReminder.exercise}`;
+      exerciseEl.textContent = `Упражнение: ${pendingReminder.exercise}`;
       nextEl.textContent = `Голосовой сигнал запущен в ${formatTime(pendingReminder.startedAt)}`;
       return;
     }
@@ -84,3 +85,11 @@ openOptionsBtn.addEventListener("click", () => {
 });
 
 refresh();
+refreshTimer = setInterval(refresh, 1000);
+
+window.addEventListener("unload", () => {
+  if (refreshTimer) {
+    clearInterval(refreshTimer);
+    refreshTimer = null;
+  }
+});
