@@ -106,7 +106,12 @@ async function startLoop(text, soundFile, volume, repeatMs) {
       return;
     }
 
-    await speakOnce(loopConfig.text, loopConfig.soundFile, loopConfig.volume);
+    const currentConfig = loopConfig;
+    await speakOnce(currentConfig.text, currentConfig.soundFile, currentConfig.volume);
+    if (!loopConfig || loopConfig !== currentConfig) {
+      return;
+    }
+
     clearLoopTimer();
     loopTimer = setTimeout(playAndSchedule, loopConfig.repeatMs);
   };
