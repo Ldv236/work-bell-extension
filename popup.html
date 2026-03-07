@@ -99,8 +99,8 @@
     }
 
     button:disabled {
-      opacity: 0.65;
-      cursor: wait;
+      opacity: 0.5;
+      cursor: default;
     }
   </style>
 </head>
@@ -113,11 +113,11 @@
       <div id="exercise" class="line"></div>
       <div id="next" class="line muted"></div>
       <div class="btns">
-        <button id="doneBtn">Сделано</button>
-        <button id="snoozeBtn" class="secondary">Отложить 5 мин</button>
+        <button id="doneBtn" disabled>Сделать</button>
+        <button id="snoozeBtn" class="secondary" disabled>Отложить 5 мин</button>
         <button id="openOptionsBtn" class="secondary" style="grid-column: 1 / -1;">Настройки</button>
       </div>
-      <div class="tip">Во время активного сигнала сначала нажмите "Сделано" или "Отложить 5 мин". Только после этого появится следующий слот.</div>
+      <div class="tip">Кнопка "Сделать" становится активной только в момент реального сигнала.</div>
     </div>
   </div>
   <script src="popup.js"></script>

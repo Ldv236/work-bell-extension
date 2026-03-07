@@ -196,7 +196,7 @@ async function showReminderNotification(reminder) {
     message: `Сделайте упражнение: ${reminder.exercise}`,
     contextMessage: "Сигнал будет повторяться, пока вы не подтвердите выполнение.",
     buttons: [
-      { title: "Сделано" },
+      { title: "Сделать" },
       { title: "Отложить на 5 минут" }
     ],
     priority: 2,
@@ -263,13 +263,16 @@ async function getRuntimeState(now = new Date()) {
         ...rawState,
         nextDueAt: null,
         pendingReminder: null,
-        lastTickAt: now.toISOString()
+        lastTickAt: now.toISOString(),
+        hasActiveReminder: false
       },
       validationError: "INVALID_WINDOW"
     };
   }
 
-  if (!pendingReminder && await hasVisibleReminderNotification()) {
+  const notificationVisible = await hasVisibleReminderNotification();
+
+  if (!pendingReminder && notificationVisible) {
     pendingReminder = {
       exercise: rawState.lastExercise || "Сделайте упражнение",
       dueAt: rawState.lastTickAt || now.toISOString(),
@@ -293,17 +296,18 @@ async function getRuntimeState(now = new Date()) {
         ...rawState,
         pendingReminder,
         lastExercise: pendingReminder.exercise,
-        lastTickAt: now.toISOString()
+        lastTickAt: now.toISOString(),
+        hasActiveReminder: true
       }
     };
   }
 
-  const nextDueAt = normalizeNextDue(rawState, now, settings);
   const normalizedState = {
     ...rawState,
     pendingReminder: null,
-    nextDueAt: nextDueAt.toISOString(),
-    lastTickAt: now.toISOString()
+    nextDueAt: normalizeNextDue(rawState, now, settings).toISOString(),
+    lastTickAt: now.toISOString(),
+    hasActiveReminder: false
   };
 
   await chrome.storage.local.set({

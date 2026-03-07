@@ -20,9 +20,9 @@ function formatTime(isoString) {
   return date.toDateString() === now.toDateString() ? time : `${time} ${date.toLocaleDateString()}`;
 }
 
-function setBusyState(isBusy) {
-  doneBtn.disabled = isBusy;
-  snoozeBtn.disabled = isBusy;
+function setActionState(hasActiveReminder, isBusy) {
+  doneBtn.disabled = !hasActiveReminder || isBusy;
+  snoozeBtn.disabled = !hasActiveReminder || isBusy;
 }
 
 function setAlertMode() {
@@ -37,6 +37,7 @@ function refresh() {
   chrome.runtime.sendMessage({ type: "GET_STATUS" }, (response) => {
     if (!response) {
       setNormalMode();
+      setActionState(false, false);
       statusEl.textContent = "Статус недоступен";
       exerciseEl.textContent = "";
       nextEl.textContent = "";
@@ -45,6 +46,7 @@ function refresh() {
 
     if (response.validationError === "INVALID_WINDOW") {
       setAlertMode();
+      setActionState(false, false);
       statusEl.textContent = 'Проверьте настройки: время "с" должно быть раньше времени "по".';
       exerciseEl.textContent = "";
       nextEl.textContent = "";
@@ -53,38 +55,38 @@ function refresh() {
 
     const { state } = response;
     const pendingReminder = state.pendingReminder;
+    const hasActiveReminder = Boolean(state.hasActiveReminder && pendingReminder?.exercise);
 
-    if (pendingReminder) {
+    if (hasActiveReminder) {
       setAlertMode();
-      statusEl.textContent = "Нужно подтвердить упражнение";
-      exerciseEl.textContent = `Сейчас сделать: ${pendingReminder.exercise}`;
+      setActionState(true, false);
+      statusEl.textContent = "Сейчас нужно сделать упражнение";
+      exerciseEl.textContent = `Новое упражнение: ${pendingReminder.exercise}`;
       nextEl.textContent = `Сигнал запущен в ${formatTime(pendingReminder.startedAt)}`;
       return;
     }
 
     setNormalMode();
+    setActionState(false, false);
     statusEl.textContent = "Ожидание следующего сигнала";
-    exerciseEl.textContent = state.lastCompletedExercise
-      ? `Последнее выполненное: ${state.lastCompletedExercise}`
-      : "Пока нет подтвержденных упражнений";
+    exerciseEl.textContent = "";
     nextEl.textContent = `Следующий сигнал: ${formatTime(state.nextDueAt)}`;
   });
 }
 
 doneBtn.addEventListener("click", () => {
-  setBusyState(true);
+  setActionState(true, true);
   chrome.runtime.sendMessage({ type: "MARK_DONE" }, () => {
-    setBusyState(false);
     refresh();
   });
 });
 
 snoozeBtn.addEventListener("click", () => {
-  setBusyState(true);
+  setActionState(true, true);
   chrome.runtime.sendMessage({ type: "SNOOZE", minutes: 5 }, (response) => {
-    setBusyState(false);
     if (response?.reason === "NO_PENDING_REMINDER") {
       setNormalMode();
+      setActionState(false, false);
       statusEl.textContent = "Сейчас нечего откладывать";
       setTimeout(refresh, 1000);
       return;
