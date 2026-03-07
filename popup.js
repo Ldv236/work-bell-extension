@@ -4,6 +4,7 @@ const statusEl = document.getElementById("status");
 const exerciseEl = document.getElementById("exercise");
 const nextEl = document.getElementById("next");
 const doneBtn = document.getElementById("doneBtn");
+const skipBtn = document.getElementById("skipBtn");
 const todayBtn = document.getElementById("todayBtn");
 const todayHistoryEl = document.getElementById("todayHistory");
 const openOptionsBtn = document.getElementById("openOptionsBtn");
@@ -41,6 +42,7 @@ function formatMinutes(value) {
 
 function setActionState(hasActiveReminder, isBusy) {
   doneBtn.disabled = !hasActiveReminder || isBusy;
+  skipBtn.disabled = !hasActiveReminder || isBusy;
 }
 
 function setAlertMode() {
@@ -78,13 +80,13 @@ function renderTodayHistory(state) {
 function applyBaseCopy() {
   if (isReminderMode) {
     titleEl.textContent = "Пора размяться";
-    subtitleEl.textContent = "Окно открывается на активном сигнале и закрывается после подтверждения выполнения.";
+    subtitleEl.textContent = "Подтвердите выполнение или пропустите текущий сигнал, если сейчас нельзя отвлечься.";
     tipEl.hidden = true;
     return;
   }
 
   titleEl.textContent = "Work Bell";
-  subtitleEl.textContent = "Напоминание встать, размяться и сделать одно упражнение. Если вас нет за компьютером, голос продолжит повторяться до подтверждения.";
+  subtitleEl.textContent = "Напоминание встать, размяться и сделать одно упражнение. Если вас нет за компьютером, сигнал повторится и окно появится снова.";
   tipEl.hidden = false;
 }
 
@@ -119,11 +121,11 @@ function refresh() {
     if (hasActiveReminder) {
       setAlertMode();
       setActionState(true, false);
-      statusEl.textContent = isReminderMode ? "Подтвердите после выполнения" : "Сейчас нужно сделать упражнение";
+      statusEl.textContent = isReminderMode ? "Выберите действие" : "Сейчас нужно сделать упражнение";
       exerciseEl.textContent = isReminderMode ? pendingReminder.exercise : `Упражнение: ${pendingReminder.exercise}`;
       nextEl.textContent = isReminderMode
         ? `Повтор сигнала: каждые ${formatMinutes(settings.repeatReminderMinutes)}`
-        : `Сигнал запущен в ${formatTime(pendingReminder.startedAt)}`;
+        : `Активный сигнал. Повтор каждые ${formatMinutes(settings.repeatReminderMinutes)}`;
       renderTodayHistory(state);
       return;
     }
@@ -137,9 +139,9 @@ function refresh() {
   });
 }
 
-doneBtn.addEventListener("click", () => {
+function resolveReminder(type) {
   setActionState(true, true);
-  chrome.runtime.sendMessage({ type: "MARK_DONE" }, () => {
+  chrome.runtime.sendMessage({ type }, () => {
     if (isReminderMode) {
       window.close();
       return;
@@ -147,6 +149,14 @@ doneBtn.addEventListener("click", () => {
 
     refresh();
   });
+}
+
+doneBtn.addEventListener("click", () => {
+  resolveReminder("MARK_DONE");
+});
+
+skipBtn.addEventListener("click", () => {
+  resolveReminder("MARK_SKIPPED");
 });
 
 todayBtn.addEventListener("click", () => {

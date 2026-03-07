@@ -21,12 +21,12 @@
 };
 
 const TICK_ALARM = "work-bell-tick";
+const REPEAT_ALARM = "work-bell-repeat";
 const NOTIFICATION_ID = "work-bell-reminder";
 const ACTIVE_TICK_GAP_MS = 2 * 60000;
 const REMINDER_WINDOW_WIDTH = 620;
 const REMINDER_WINDOW_HEIGHT = 660;
-const OFFSCREEN_START_LOOP = "OFFSCREEN_START_LOOP";
-const OFFSCREEN_STOP_LOOP = "OFFSCREEN_STOP_LOOP";
+const OFFSCREEN_PLAY = "OFFSCREEN_PLAY";
 const OFFSCREEN_PLAY_PREVIEW = "OFFSCREEN_PLAY_PREVIEW";
 
 async function getSettings() {
@@ -228,7 +228,7 @@ async function ensureOffscreen() {
   await chrome.offscreen.createDocument({
     url: "offscreen.html",
     reasons: ["AUDIO_PLAYBACK"],
-    justification: "Speak or play the reminder until the exercise is confirmed"
+    justification: "Speak or play reminder audio on demand"
   });
 }
 
@@ -247,21 +247,22 @@ async function sendOffscreenMessage(message) {
   }
 }
 
-async function startReminderLoop(settings, reminder) {
-  const speech = buildReminderSpeech(reminder.exercise, settings);
+async function playSpeech(text, settings, volumeOverride) {
   await sendOffscreenMessage({
-    type: OFFSCREEN_START_LOOP,
-    reminderId: reminder.startedAt,
-    introText: speech.introText,
-    repeatText: speech.repeatText,
+    type: OFFSCREEN_PLAY,
+    text,
     soundFile: settings.soundFile,
-    volume: settings.volume,
-    repeatMs: settings.repeatReminderMinutes * 60000
+    volume: Math.max(0, Math.min(1, Number(volumeOverride ?? settings.volume)))
   });
 }
 
-async function stopReminderLoop() {
-  await sendOffscreenMessage({ type: OFFSCREEN_STOP_LOOP });
+async function playReminderIntro(settings, reminder) {
+  const speech = buildReminderSpeech(reminder.exercise, settings);
+  await playSpeech(speech.introText, settings);
+}
+
+async function playReminderRepeat(settings, reminder) {
+  await playSpeech(reminder.exercise, settings);
 }
 
 async function playPreview(settings, volumeOverride, introOverride, outroOverride) {
@@ -274,11 +275,22 @@ async function playPreview(settings, volumeOverride, introOverride, outroOverrid
 
   await sendOffscreenMessage({
     type: OFFSCREEN_PLAY_PREVIEW,
-    introText: speech.introText,
-    repeatText: speech.repeatText,
+    text: speech.introText,
     soundFile: settings.soundFile,
     volume: Math.max(0, Math.min(1, Number(volumeOverride ?? settings.volume)))
   });
+}
+
+async function scheduleRepeatAlarm(repeatReminderMinutes) {
+  await chrome.alarms.clear(REPEAT_ALARM);
+  chrome.alarms.create(REPEAT_ALARM, {
+    delayInMinutes: repeatReminderMinutes,
+    periodInMinutes: repeatReminderMinutes
+  });
+}
+
+async function clearRepeatAlarm() {
+  await chrome.alarms.clear(REPEAT_ALARM);
 }
 
 async function setBadgePending(isPending) {
@@ -292,9 +304,10 @@ async function showReminderNotification(reminder) {
     iconUrl: "icons/128.png",
     title: "Пора встать от компьютера",
     message: `Сейчас сделать: ${reminder.exercise}`,
-    contextMessage: "Сигнал будет повторяться, пока вы не нажмете \"Сделано\".",
+    contextMessage: "Сигнал будет повторяться, пока вы не нажмете \"Сделано\" или \"Пропущу\".",
     buttons: [
-      { title: "Сделано" }
+      { title: "Сделано" },
+      { title: "Пропущу" }
     ],
     priority: 2,
     requireInteraction: true
@@ -342,7 +355,7 @@ async function closeReminderWindow() {
 }
 
 async function clearReminderPresentation() {
-  await stopReminderLoop();
+  await clearRepeatAlarm();
   await setBadgePending(false);
   await chrome.notifications.clear(NOTIFICATION_ID);
   await closeReminderWindow();
@@ -392,6 +405,12 @@ function buildTodaySummary(completedToday) {
   return Array.from(counts.entries())
     .map(([exercise, count]) => ({ exercise, count }))
     .sort((left, right) => right.count - left.count || left.exercise.localeCompare(right.exercise, "ru"));
+}
+
+async function refreshPendingReminderPresentation(pendingReminder, settings) {
+  await setBadgePending(true);
+  await showReminderNotification(pendingReminder);
+  await scheduleRepeatAlarm(settings.repeatReminderMinutes);
 }
 
 async function getRuntimeState(now = new Date()) {
@@ -493,83 +512,12 @@ async function triggerReminder(now, settings, state) {
 
   await setBadgePending(true);
   await showReminderNotification(reminder);
-  await startReminderLoop(settings, reminder);
   await openReminderWindow();
+  await scheduleRepeatAlarm(settings.repeatReminderMinutes);
+  await playReminderIntro(settings, reminder);
 }
 
-async function keepPendingReminderAlive(pendingReminder, settings) {
-  await setBadgePending(true);
-  await showReminderNotification(pendingReminder);
-  await startReminderLoop(settings, pendingReminder);
-  await openReminderWindow();
-}
-
-async function rescheduleFromSettings() {
-  const now = new Date();
-  const state = await getState();
-
-  if (!state.pendingReminder) {
-    await chrome.storage.local.set({
-      nextDueAt: null,
-      lastTickAt: now.toISOString(),
-      lastExercise: null
-    });
-  }
-
-  await tick();
-  return { ok: true, pending: Boolean(state.pendingReminder) };
-}
-
-async function resetQueueFromSettings() {
-  const now = new Date();
-  const settings = await getSettings();
-  const rawState = await getState();
-  const state = await normalizeDayState(rawState, settings, now, { resetQueue: true });
-
-  await chrome.storage.local.set({
-    queueDayKey: todayKey(now),
-    queueRemaining: state.queueRemaining,
-    lastTickAt: now.toISOString()
-  });
-
-  if (!state.pendingReminder) {
-    await chrome.storage.local.set({ nextDueAt: null });
-    await tick();
-  }
-
-  return {
-    ok: true,
-    queueLength: state.queueRemaining.length
-  };
-}
-
-async function tick() {
-  const now = new Date();
-  const runtime = await getRuntimeState(now);
-
-  if (runtime.validationError === "INVALID_WINDOW") {
-    await clearReminderPresentation();
-    return;
-  }
-
-  const { settings, state } = runtime;
-
-  if (state.pendingReminder) {
-    await keepPendingReminderAlive(state.pendingReminder, settings);
-    return;
-  }
-
-  const nextDueAt = state.nextDueAt ? new Date(state.nextDueAt) : computeNextDueAtOrAfter(now, settings);
-
-  if (now >= nextDueAt && isWithinWindow(nextDueAt, settings)) {
-    await triggerReminder(now, settings, state);
-    return;
-  }
-
-  await setBadgePending(false);
-}
-
-async function handleDone() {
+async function resolveReminder(countExercise) {
   const now = new Date();
   const settings = await getSettings();
   const rawState = await getState();
@@ -577,7 +525,7 @@ async function handleDone() {
   const completedExercise = state.pendingReminder?.exercise || state.lastExercise || null;
   const completedToday = [...state.completedToday];
 
-  if (completedExercise) {
+  if (countExercise && completedExercise) {
     completedToday.push({
       exercise: completedExercise,
       completedAt: now.toISOString()
@@ -610,13 +558,39 @@ async function handleDone() {
   return { ok: true, nextDueAt: nextDueAt.toISOString() };
 }
 
+async function handleRepeatAlarm() {
+  const now = new Date();
+  const runtime = await getRuntimeState(now);
+
+  if (runtime.validationError === "INVALID_WINDOW") {
+    await clearReminderPresentation();
+    return;
+  }
+
+  const { settings, state } = runtime;
+  if (!state.pendingReminder) {
+    await clearRepeatAlarm();
+    return;
+  }
+
+  await setBadgePending(true);
+  await showReminderNotification(state.pendingReminder);
+  await openReminderWindow();
+  await playReminderRepeat(settings, state.pendingReminder);
+}
+
 chrome.notifications.onButtonClicked.addListener(async (notificationId, buttonIndex) => {
   if (notificationId !== NOTIFICATION_ID) {
     return;
   }
 
   if (buttonIndex === 0) {
-    await handleDone();
+    await resolveReminder(true);
+    return;
+  }
+
+  if (buttonIndex === 1) {
+    await resolveReminder(false);
   }
 });
 
@@ -643,7 +617,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
 
     if (message?.type === "MARK_DONE") {
-      sendResponse(await handleDone());
+      sendResponse(await resolveReminder(true));
+      return;
+    }
+
+    if (message?.type === "MARK_SKIPPED") {
+      sendResponse(await resolveReminder(false));
       return;
     }
 
@@ -655,12 +634,39 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
 
     if (message?.type === "SETTINGS_UPDATED") {
-      sendResponse(await rescheduleFromSettings());
+      const runtime = await getRuntimeState(new Date());
+      if (runtime.state.pendingReminder) {
+        await refreshPendingReminderPresentation(runtime.state.pendingReminder, runtime.settings);
+      } else {
+        await chrome.storage.local.set({
+          nextDueAt: null,
+          lastTickAt: new Date().toISOString(),
+          lastExercise: null
+        });
+        await tick();
+      }
+      sendResponse({ ok: true });
       return;
     }
 
     if (message?.type === "RESET_QUEUE") {
-      sendResponse(await resetQueueFromSettings());
+      const now = new Date();
+      const settings = await getSettings();
+      const rawState = await getState();
+      const state = await normalizeDayState(rawState, settings, now, { resetQueue: true });
+
+      await chrome.storage.local.set({
+        queueDayKey: todayKey(now),
+        queueRemaining: state.queueRemaining,
+        lastTickAt: now.toISOString()
+      });
+
+      if (!state.pendingReminder) {
+        await chrome.storage.local.set({ nextDueAt: null });
+        await tick();
+      }
+
+      sendResponse({ ok: true, queueLength: state.queueRemaining.length });
       return;
     }
 
@@ -669,6 +675,32 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
   return true;
 });
+
+async function tick() {
+  const now = new Date();
+  const runtime = await getRuntimeState(now);
+
+  if (runtime.validationError === "INVALID_WINDOW") {
+    await clearReminderPresentation();
+    return;
+  }
+
+  const { settings, state } = runtime;
+
+  if (state.pendingReminder) {
+    await refreshPendingReminderPresentation(state.pendingReminder, settings);
+    return;
+  }
+
+  const nextDueAt = state.nextDueAt ? new Date(state.nextDueAt) : computeNextDueAtOrAfter(now, settings);
+
+  if (now >= nextDueAt && isWithinWindow(nextDueAt, settings)) {
+    await triggerReminder(now, settings, state);
+    return;
+  }
+
+  await setBadgePending(false);
+}
 
 async function bootstrap() {
   chrome.alarms.create(TICK_ALARM, { periodInMinutes: 1 });
@@ -680,5 +712,10 @@ chrome.runtime.onStartup.addListener(bootstrap);
 chrome.alarms.onAlarm.addListener(async (alarm) => {
   if (alarm.name === TICK_ALARM) {
     await tick();
+    return;
+  }
+
+  if (alarm.name === REPEAT_ALARM) {
+    await handleRepeatAlarm();
   }
 });

@@ -176,9 +176,19 @@
       margin-top: 12px;
     }
 
+    .pair {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+
     body.reminder .btns {
       gap: 12px;
       margin-top: 0;
+    }
+
+    body.reminder .pair {
+      gap: 12px;
     }
 
     button {
@@ -225,11 +235,14 @@
         <div id="next" class="line muted"></div>
         <div id="todayHistory" class="today-box hidden"></div>
         <div class="btns">
-          <button id="doneBtn" disabled>Сделано</button>
+          <div class="pair">
+            <button id="doneBtn" disabled>Сделано</button>
+            <button id="skipBtn" class="secondary" disabled>Пропущу</button>
+          </div>
           <button id="todayBtn" class="secondary">Сегодня</button>
           <button id="openOptionsBtn" class="secondary">Настройки</button>
         </div>
-        <div id="tip" class="tip">Кнопка "Сделано" активна только в момент реального сигнала.</div>
+        <div id="tip" class="tip">"Сделано" учитывает упражнение в статистике за день. "Пропущу" закрывает текущее напоминание без учета.</div>
       </div>
     </div>
   </div>
