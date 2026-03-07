@@ -176,6 +176,15 @@
         </div>
 
         <div class="row">
+          <label for="audioMode">Тип сигнала</label>
+          <select id="audioMode">
+            <option value="voice">Голос</option>
+            <option value="beep">Бип</option>
+          </select>
+          <div class="hint">По умолчанию используется голос. В режиме бипа и первый сигнал, и повторы будут проигрываться коротким звуком.</div>
+        </div>
+
+        <div class="row">
           <label for="intervalMinutes">Основной интервал, минут</label>
           <input id="intervalMinutes" type="number" min="1" step="1" />
           <div class="hint">Как часто запускать новые упражнения: либо по сетке, либо после вашего подтверждения.</div>
@@ -205,7 +214,7 @@
             <input id="volume" type="range" min="0" max="100" step="5" />
             <div id="volumeValue" class="value">70%</div>
           </div>
-          <div class="hint">Полный сигнал: начало фразы + упражнение + конец фразы. Повторы: только название упражнения.</div>
+          <div class="hint">В голосовом режиме: полный сигнал = начало фразы + упражнение + конец фразы, повторы = только название упражнения.</div>
         </div>
       </div>
 
@@ -218,7 +227,7 @@
       <div class="btns">
         <button id="save">Сохранить</button>
         <button id="resetQueue" class="secondary">Обновить очередь</button>
-        <button id="testSound" class="secondary">Проверить голос</button>
+        <button id="testSound" class="secondary">Проверить сигнал</button>
         <span id="status"></span>
       </div>
     </div>

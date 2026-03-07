@@ -4,6 +4,7 @@
   intervalMinutes: 60,
   repeatReminderMinutes: 3,
   scheduleMode: "after_confirmation",
+  audioMode: "voice",
   reminderIntroText: "Пора размяться.",
   reminderOutroText: "Подтвердите в приложении.",
   volume: 0.7,
@@ -24,6 +25,7 @@
 const startTimeEl = document.getElementById("startTime");
 const endTimeEl = document.getElementById("endTime");
 const scheduleModeEl = document.getElementById("scheduleMode");
+const audioModeEl = document.getElementById("audioMode");
 const intervalMinutesEl = document.getElementById("intervalMinutes");
 const repeatReminderMinutesEl = document.getElementById("repeatReminderMinutes");
 const reminderIntroTextEl = document.getElementById("reminderIntroText");
@@ -41,6 +43,7 @@ async function load() {
   startTimeEl.value = settings.startTime;
   endTimeEl.value = settings.endTime;
   scheduleModeEl.value = settings.scheduleMode || DEFAULTS.scheduleMode;
+  audioModeEl.value = settings.audioMode || DEFAULTS.audioMode;
   intervalMinutesEl.value = settings.intervalMinutes;
   repeatReminderMinutesEl.value = settings.repeatReminderMinutes;
   reminderIntroTextEl.value = settings.reminderIntroText;
@@ -69,6 +72,10 @@ function validate() {
     return "Выберите корректный режим интервала.";
   }
 
+  if (!["voice", "beep"].includes(audioModeEl.value)) {
+    return "Выберите корректный тип сигнала.";
+  }
+
   if (Number(intervalMinutesEl.value) < 1) {
     return "Основной интервал должен быть не меньше 1 минуты.";
   }
@@ -93,6 +100,7 @@ function collectSettings() {
     startTime: startTimeEl.value,
     endTime: endTimeEl.value,
     scheduleMode: scheduleModeEl.value,
+    audioMode: audioModeEl.value,
     intervalMinutes: Number(intervalMinutesEl.value),
     repeatReminderMinutes: Number(repeatReminderMinutesEl.value),
     reminderIntroText: String(reminderIntroTextEl.value).trim(),
@@ -147,10 +155,11 @@ function testSound() {
   chrome.runtime.sendMessage({
     type: "PLAY_PREVIEW",
     volume: Number(volumeEl.value) / 100,
+    audioMode: audioModeEl.value,
     reminderIntroText: String(reminderIntroTextEl.value).trim(),
     reminderOutroText: String(reminderOutroTextEl.value).trim()
   });
-  flashStatus("Проверяю голосовой сигнал", "", 1200);
+  flashStatus("Проверяю сигнал", "", 1200);
 }
 
 volumeEl.addEventListener("input", () => {

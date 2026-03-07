@@ -1,5 +1,7 @@
 ﻿const OFFSCREEN_PLAY = "OFFSCREEN_PLAY";
 const OFFSCREEN_PLAY_PREVIEW = "OFFSCREEN_PLAY_PREVIEW";
+const AUDIO_MODE_VOICE = "voice";
+const AUDIO_MODE_BEEP = "beep";
 let fallbackAudio = null;
 
 function hasSpeechSupport() {
@@ -39,11 +41,17 @@ function playFallback(soundFile, volume) {
 
   fallbackAudio.src = chrome.runtime.getURL(soundFile);
   fallbackAudio.volume = Math.max(0, Math.min(1, Number(volume ?? 0.7)));
-  fallbackAudio.play().catch((error) => console.warn("fallback audio failed", error));
+  return fallbackAudio.play().catch((error) => console.warn("fallback audio failed", error));
 }
 
-function speakOnce(text, soundFile, volume) {
+function speakOnce(text, soundFile, volume, audioMode) {
   return new Promise((resolve) => {
+    if (audioMode === AUDIO_MODE_BEEP) {
+      playFallback(soundFile, volume);
+      resolve();
+      return;
+    }
+
     if (!text) {
       resolve();
       return;
@@ -103,6 +111,7 @@ if (hasSpeechSupport()) {
 chrome.runtime.onMessage.addListener((message) => {
   if (message?.type === OFFSCREEN_PLAY || message?.type === OFFSCREEN_PLAY_PREVIEW) {
     stopEverything();
-    speakOnce(message.text, message.soundFile, message.volume);
+    const audioMode = message.audioMode === AUDIO_MODE_BEEP ? AUDIO_MODE_BEEP : AUDIO_MODE_VOICE;
+    speakOnce(message.text, message.soundFile, message.volume, audioMode);
   }
 });

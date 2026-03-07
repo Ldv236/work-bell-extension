@@ -4,6 +4,7 @@
   intervalMinutes: 60,
   repeatReminderMinutes: 3,
   scheduleMode: "after_confirmation",
+  audioMode: "voice",
   reminderIntroText: "Пора размяться.",
   reminderOutroText: "Подтвердите в приложении.",
   volume: 0.7,
@@ -23,6 +24,8 @@
 
 const SCHEDULE_MODE_FIXED = "fixed_slots";
 const SCHEDULE_MODE_AFTER_CONFIRMATION = "after_confirmation";
+const AUDIO_MODE_VOICE = "voice";
+const AUDIO_MODE_BEEP = "beep";
 const TICK_ALARM = "work-bell-tick";
 const REPEAT_ALARM = "work-bell-repeat";
 const NOTIFICATION_ID = "work-bell-reminder";
@@ -40,6 +43,7 @@ async function getSettings() {
   const scheduleMode = raw.scheduleMode === SCHEDULE_MODE_FIXED
     ? SCHEDULE_MODE_FIXED
     : SCHEDULE_MODE_AFTER_CONFIRMATION;
+  const audioMode = raw.audioMode === AUDIO_MODE_BEEP ? AUDIO_MODE_BEEP : AUDIO_MODE_VOICE;
 
   return {
     startTime: raw.startTime,
@@ -47,6 +51,7 @@ async function getSettings() {
     intervalMinutes: Math.max(1, Number(raw.intervalMinutes || DEFAULTS.intervalMinutes)),
     repeatReminderMinutes: Math.max(1, Number(raw.repeatReminderMinutes || DEFAULTS.repeatReminderMinutes)),
     scheduleMode,
+    audioMode,
     reminderIntroText: String(raw.reminderIntroText ?? DEFAULTS.reminderIntroText).trim() || DEFAULTS.reminderIntroText,
     reminderOutroText: String(raw.reminderOutroText ?? DEFAULTS.reminderOutroText).trim(),
     volume: Math.max(0, Math.min(1, Number(raw.volume ?? DEFAULTS.volume))),
@@ -296,10 +301,11 @@ async function sendOffscreenMessage(message) {
   }
 }
 
-async function playSpeech(text, settings, volumeOverride) {
+async function playSignal(text, settings, volumeOverride) {
   await sendOffscreenMessage({
     type: OFFSCREEN_PLAY,
     text,
+    audioMode: settings.audioMode,
     soundFile: settings.soundFile,
     volume: Math.max(0, Math.min(1, Number(volumeOverride ?? settings.volume)))
   });
@@ -307,16 +313,17 @@ async function playSpeech(text, settings, volumeOverride) {
 
 async function playReminderIntro(settings, reminder) {
   const speech = buildReminderSpeech(reminder.exercise, settings);
-  await playSpeech(speech.introText, settings);
+  await playSignal(speech.introText, settings);
 }
 
 async function playReminderRepeat(settings, reminder) {
-  await playSpeech(reminder.exercise, settings);
+  await playSignal(reminder.exercise, settings);
 }
 
-async function playPreview(settings, volumeOverride, introOverride, outroOverride) {
+async function playPreview(settings, volumeOverride, introOverride, outroOverride, audioModeOverride) {
   const previewSettings = {
     ...settings,
+    audioMode: audioModeOverride === AUDIO_MODE_BEEP ? AUDIO_MODE_BEEP : settings.audioMode,
     reminderIntroText: String(introOverride ?? settings.reminderIntroText).trim() || DEFAULTS.reminderIntroText,
     reminderOutroText: String(outroOverride ?? settings.reminderOutroText).trim()
   };
@@ -325,6 +332,7 @@ async function playPreview(settings, volumeOverride, introOverride, outroOverrid
   await sendOffscreenMessage({
     type: OFFSCREEN_PLAY_PREVIEW,
     text: speech.introText,
+    audioMode: previewSettings.audioMode,
     soundFile: settings.soundFile,
     volume: Math.max(0, Math.min(1, Number(volumeOverride ?? settings.volume)))
   });
@@ -710,7 +718,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
     if (message?.type === "PLAY_PREVIEW") {
       const settings = await getSettings();
-      await playPreview(settings, message.volume, message.reminderIntroText, message.reminderOutroText);
+      await playPreview(settings, message.volume, message.reminderIntroText, message.reminderOutroText, message.audioMode);
       sendResponse({ ok: true });
       return;
     }
