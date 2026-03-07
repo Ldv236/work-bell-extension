@@ -2,73 +2,209 @@
 <html lang="ru">
 <head>
   <meta charset="utf-8" />
-  <title>Work Bell — настройки</title>
+  <title>Work Bell - настройки</title>
   <style>
-    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 16px; max-width: 900px; }
-    .row { margin: 10px 0; }
-    label { display: inline-block; min-width: 260px; }
-    input[type="number"] { width: 110px; }
-    textarea { width: 100%; height: 180px; }
-    .hint { color: #555; font-size: 12px; margin-top: 6px; }
-    .btns { display: flex; gap: 10px; align-items: center; margin-top: 14px; flex-wrap: wrap; }
-    button { padding: 8px 12px; cursor: pointer; }
-    .ok { color: #0a7; }
+    :root {
+      --bg: #f6f1e8;
+      --panel: #fffdf9;
+      --text: #1f1f1f;
+      --muted: #6c655d;
+      --accent: #b15a2b;
+      --accent-dark: #8d4018;
+      --border: #ddd2c3;
+      --danger: #b42318;
+      --ok: #027a48;
+    }
+
+    body {
+      margin: 0;
+      background:
+        radial-gradient(circle at top left, rgba(177, 90, 43, 0.12), transparent 35%),
+        linear-gradient(180deg, #efe6d5 0%, var(--bg) 100%);
+      font-family: "Segoe UI", sans-serif;
+      color: var(--text);
+    }
+
+    .wrap {
+      max-width: 880px;
+      margin: 0 auto;
+      padding: 28px 18px 40px;
+    }
+
+    h1 {
+      margin: 0 0 8px;
+      font-size: 32px;
+    }
+
+    .lead {
+      margin: 0 0 20px;
+      color: var(--muted);
+      line-height: 1.5;
+      max-width: 720px;
+    }
+
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      padding: 20px;
+      box-shadow: 0 14px 40px rgba(72, 49, 25, 0.08);
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 14px;
+    }
+
+    .row {
+      margin: 0 0 14px;
+    }
+
+    label {
+      display: block;
+      margin-bottom: 6px;
+      font-weight: 600;
+    }
+
+    input[type="time"],
+    input[type="number"],
+    textarea {
+      width: 100%;
+      box-sizing: border-box;
+      padding: 10px 12px;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: #fffdfb;
+      color: var(--text);
+      font: inherit;
+    }
+
+    textarea {
+      min-height: 220px;
+      resize: vertical;
+    }
+
+    .hint {
+      margin-top: 6px;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.4;
+    }
+
+    .range-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    input[type="range"] {
+      flex: 1;
+    }
+
+    .value {
+      min-width: 48px;
+      font-weight: 700;
+      color: var(--accent-dark);
+      text-align: right;
+    }
+
+    .note {
+      margin-top: 4px;
+      padding: 12px 14px;
+      border-radius: 12px;
+      background: #f1e7da;
+      color: #5f4737;
+      line-height: 1.45;
+      font-size: 13px;
+    }
+
+    .btns {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      margin-top: 16px;
+      flex-wrap: wrap;
+    }
+
+    button {
+      min-height: 42px;
+      padding: 0 16px;
+      border: 0;
+      border-radius: 12px;
+      background: var(--accent);
+      color: #fff;
+      font: inherit;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    button.secondary {
+      background: #e9dfd1;
+      color: var(--text);
+    }
+
+    #status.ok {
+      color: var(--ok);
+    }
+
+    #status.error {
+      color: var(--danger);
+    }
   </style>
 </head>
 <body>
-  <h2>Work Bell — настройки</h2>
+  <div class="wrap">
+    <h1>Work Bell</h1>
+    <p class="lead">
+      Расширение работает каждый день в промежутке от времени "с" до времени "по". Внутри этого окна оно выбирает одно упражнение,
+      подает настойчивый звуковой сигнал и ждет, пока вы подтвердите выполнение или отложите напоминание на 5 минут.
+    </p>
 
-  <div class="row">
-    <label>Время с:</label>
-    <input id="startTime" type="time" />
-  </div>
+    <div class="panel">
+      <div class="grid">
+        <div class="row">
+          <label for="startTime">Время с</label>
+          <input id="startTime" type="time" />
+          <div class="hint">Первый слот напоминания начинается ровно с этого времени.</div>
+        </div>
 
-  <div class="row">
-    <label>Время до:</label>
-    <input id="endTime" type="time" />
-  </div>
+        <div class="row">
+          <label for="endTime">Время по</label>
+          <input id="endTime" type="time" />
+          <div class="hint">После этого времени новые сигналы не создаются до следующего дня.</div>
+        </div>
 
-  <div class="row">
-    <label>Интервал (мин):</label>
-    <input id="intervalMinutes" type="number" min="5" step="5" />
-    <div class="hint">Например 60 = раз в час.</div>
-  </div>
+        <div class="row">
+          <label for="intervalMinutes">Интервал, минут</label>
+          <input id="intervalMinutes" type="number" min="5" step="5" />
+          <div class="hint">Например, 60 означает напоминание раз в час.</div>
+        </div>
 
-  <div class="row">
-    <label>Тихий режим (без звука):</label>
-    <input id="quietMode" type="checkbox" />
-  </div>
+        <div class="row">
+          <label for="volume">Громкость сигнала</label>
+          <div class="range-row">
+            <input id="volume" type="range" min="0" max="100" step="5" />
+            <div id="volumeValue" class="value">70%</div>
+          </div>
+          <div class="hint">Тестовый звук играет один раз, рабочий сигнал повторяется до подтверждения.</div>
+        </div>
+      </div>
 
-  <div class="row">
-    <label>Громкость:</label>
-    <input id="volume" type="range" min="0" max="1" step="0.05" />
-  </div>
+      <div class="row">
+        <label for="exercises">Список упражнений, по одному на строку</label>
+        <textarea id="exercises"></textarea>
+        <div class="hint">Можно дополнять список своими вариантами. На каждом сигнале расширение выбирает одно случайное упражнение.</div>
+      </div>
 
-  <div class="row">
-    <label>Уведомление висит до ответа:</label>
-    <input id="requireInteraction" type="checkbox" />
-    <div class="hint">Если включено, уведомление не исчезает само.</div>
-  </div>
+      <div class="note">Если вы отошли от компьютера, расширение не считает упражнение выполненным автоматически. Сигнал продолжит возвращаться, пока вы не нажмете "Сделано" или "Отложить 5 минут".</div>
 
-  <div class="row">
-    <label>Считать “опозданием” после (мин):</label>
-    <input id="lateAfterMinutes" type="number" min="1" step="1" />
-    <div class="hint">Если подтвердил позже, счётчик пропусков не уменьшается.</div>
-  </div>
-
-  <hr />
-
-  <div class="row">
-    <label>Список упражнений (по одному на строку):</label>
-    <textarea id="exercises"></textarea>
-    <div class="hint">Каждый сигнал выбирает случайное упражнение из списка.</div>
-  </div>
-
-  <div class="btns">
-    <button id="save">Сохранить</button>
-    <button id="testSound">Проверить звук</button>
-    <button id="replaySound">Повторить сигнал</button>
-    <span id="status"></span>
+      <div class="btns">
+        <button id="save">Сохранить</button>
+        <button id="testSound" class="secondary">Проверить звук</button>
+        <span id="status"></span>
+      </div>
+    </div>
   </div>
 
   <script src="options.js"></script>

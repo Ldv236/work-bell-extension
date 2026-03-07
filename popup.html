@@ -4,24 +4,111 @@
   <meta charset="utf-8" />
   <title>Work Bell</title>
   <style>
-    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 12px; width: 340px; }
-    .title { font-weight: 700; margin-bottom: 8px; }
-    .line { margin: 6px 0; }
-    .muted { color: #666; font-size: 12px; white-space: pre-line; }
-    .btns { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; }
-    button { padding: 8px 10px; cursor: pointer; }
+    :root {
+      color-scheme: light;
+      --bg: #f7f4ec;
+      --panel: #fffdf8;
+      --text: #222222;
+      --muted: #6b645c;
+      --accent: #b15a2b;
+      --border: #ded4c4;
+    }
+
+    body {
+      margin: 0;
+      width: 360px;
+      background: linear-gradient(180deg, #f6ebd7 0%, var(--bg) 100%);
+      font-family: "Segoe UI", sans-serif;
+      color: var(--text);
+    }
+
+    .wrap {
+      padding: 16px;
+    }
+
+    .title {
+      margin: 0 0 6px;
+      font-size: 20px;
+      font-weight: 700;
+    }
+
+    .subtitle {
+      margin: 0 0 14px;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.45;
+    }
+
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 12px;
+      box-shadow: 0 10px 28px rgba(72, 49, 25, 0.08);
+    }
+
+    .line {
+      margin: 0 0 10px;
+      line-height: 1.4;
+    }
+
+    .muted {
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .tip {
+      margin-top: 10px;
+      padding-top: 10px;
+      border-top: 1px dashed var(--border);
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.45;
+    }
+
+    .btns {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      margin-top: 12px;
+    }
+
+    button {
+      min-height: 38px;
+      border: 0;
+      border-radius: 10px;
+      background: var(--accent);
+      color: #ffffff;
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    button.secondary {
+      background: #ece2d5;
+      color: var(--text);
+    }
+
+    button:disabled {
+      opacity: 0.65;
+      cursor: wait;
+    }
   </style>
 </head>
 <body>
-  <div class="title">Work Bell</div>
-  <div id="status" class="line">Загрузка…</div>
-  <div id="exercise" class="line muted"></div>
-  <div id="next" class="line muted"></div>
-  <div class="btns">
-    <button id="doneBtn">Сделал(а)</button>
-    <button id="snoozeBtn">Отложить 5м</button>
-    <button id="replayBtn">Повторить звук</button>
-    <button id="openOptionsBtn">Настройки</button>
+  <div class="wrap">
+    <h1 class="title">Work Bell</h1>
+    <p class="subtitle">Напоминание встать, размяться и сделать одно упражнение. Если вас нет за компьютером, сигнал продолжит повторяться до подтверждения.</p>
+    <div class="card">
+      <div id="status" class="line">Загрузка...</div>
+      <div id="exercise" class="line"></div>
+      <div id="next" class="line muted"></div>
+      <div class="btns">
+        <button id="doneBtn">Сделано</button>
+        <button id="snoozeBtn" class="secondary">Отложить 5 мин</button>
+        <button id="openOptionsBtn" class="secondary" style="grid-column: 1 / -1;">Настройки</button>
+      </div>
+      <div class="tip">Если сигнал уже идет, сначала подтвердите упражнение или отложите его, и только потом появится следующий слот.</div>
+    </div>
   </div>
   <script src="popup.js"></script>
 </body>

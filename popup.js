@@ -1,57 +1,81 @@
-﻿function fmtTime(iso) {
-  if (!iso) return "—";
-  const d = new Date(iso);
-  const time = d.toLocaleString([], { hour: "2-digit", minute: "2-digit" });
+﻿const statusEl = document.getElementById("status");
+const exerciseEl = document.getElementById("exercise");
+const nextEl = document.getElementById("next");
+const doneBtn = document.getElementById("doneBtn");
+const snoozeBtn = document.getElementById("snoozeBtn");
+const openOptionsBtn = document.getElementById("openOptionsBtn");
+
+function formatTime(isoString) {
+  if (!isoString) {
+    return "—";
+  }
+
+  const date = new Date(isoString);
+  if (Number.isNaN(date.getTime())) {
+    return "—";
+  }
+
   const now = new Date();
-  return d.toDateString() === now.toDateString() ? time : `${time} (${d.toLocaleDateString()})`;
+  const time = date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  return date.toDateString() === now.toDateString() ? time : `${time} ${date.toLocaleDateString()}`;
+}
+
+function setBusyState(isBusy) {
+  doneBtn.disabled = isBusy;
+  snoozeBtn.disabled = isBusy;
 }
 
 function refresh() {
-  chrome.runtime.sendMessage({ type: "GET_STATUS" }, (resp) => {
-    if (!resp) {
-      status.textContent = "Не удалось получить статус";
+  chrome.runtime.sendMessage({ type: "GET_STATUS" }, (response) => {
+    if (!response) {
+      statusEl.textContent = "Статус недоступен";
+      exerciseEl.textContent = "";
+      nextEl.textContent = "";
       return;
     }
 
-    const { state } = resp;
-    const pending = !!state.pendingAck;
-    const missed = Number(state.missedCount || 0);
+    if (response.validationError === "INVALID_WINDOW") {
+      statusEl.textContent = 'Проверьте настройки: время "с" должно быть раньше времени "по".';
+      exerciseEl.textContent = "";
+      nextEl.textContent = "";
+      return;
+    }
 
-    status.textContent = pending
-      ? `Ждёт подтверждения (пропуски: ${missed})`
-      : `Ок (пропуски: ${missed})`;
+    const { state } = response;
+    const pendingReminder = state.pendingReminder;
 
-    exercise.textContent = state.lastExercise ? `Последнее упражнение:\n${state.lastExercise}` : "";
+    if (pendingReminder) {
+      statusEl.textContent = "Сейчас идет активное напоминание";
+      exerciseEl.textContent = `Упражнение: ${pendingReminder.exercise}`;
+      nextEl.textContent = `Сигнал начался в ${formatTime(pendingReminder.startedAt)}`;
+      return;
+    }
 
-    let extra = "";
-    if (state.snoozedUntil) extra = `\nОтложено до: ${fmtTime(state.snoozedUntil)}`;
-    next.textContent = `Следующий сигнал: ${fmtTime(state.nextDueAt)}${extra}`;
+    statusEl.textContent = "Ожидание следующего сигнала";
+    exerciseEl.textContent = state.lastExercise ? `Последнее упражнение: ${state.lastExercise}` : "Упражнение появится при следующем сигнале";
+    nextEl.textContent = `Следующий сигнал: ${formatTime(state.nextDueAt)}`;
   });
 }
 
 doneBtn.addEventListener("click", () => {
-  chrome.runtime.sendMessage({ type: "MARK_DONE" }, () => refresh());
-});
-
-snoozeBtn.addEventListener("click", () => {
-  chrome.runtime.sendMessage({ type: "SNOOZE", minutes: 5 }, (resp) => {
-    if (resp?.reason === "NO_PENDING_REMINDER") {
-      status.textContent = "Сейчас нечего откладывать";
-      setTimeout(refresh, 900);
-      return;
-    }
+  setBusyState(true);
+  chrome.runtime.sendMessage({ type: "MARK_DONE" }, () => {
+    setBusyState(false);
     refresh();
   });
 });
 
-replayBtn.addEventListener("click", () => {
-  chrome.runtime.sendMessage({ type: "REPLAY_SOUND" }, (resp) => {
-    if (resp?.reason === "QUIET_MODE") {
-      status.textContent = "Тихий режим включён";
+snoozeBtn.addEventListener("click", () => {
+  setBusyState(true);
+  chrome.runtime.sendMessage({ type: "SNOOZE", minutes: 5 }, (response) => {
+    setBusyState(false);
+    if (response?.reason === "NO_PENDING_REMINDER") {
+      statusEl.textContent = "Сейчас нечего откладывать";
+      setTimeout(refresh, 1000);
       return;
     }
-    status.textContent = "Сигнал повторён";
-    setTimeout(refresh, 700);
+
+    refresh();
   });
 });
 
