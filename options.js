@@ -3,6 +3,8 @@
   endTime: "22:00",
   intervalMinutes: 60,
   repeatReminderMinutes: 3,
+  reminderIntroText: "Пора размяться.",
+  reminderOutroText: "Подтвердите в приложении.",
   volume: 0.7,
   soundFile: "sounds/bell.wav",
   exercises: [
@@ -22,6 +24,8 @@ const startTimeEl = document.getElementById("startTime");
 const endTimeEl = document.getElementById("endTime");
 const intervalMinutesEl = document.getElementById("intervalMinutes");
 const repeatReminderMinutesEl = document.getElementById("repeatReminderMinutes");
+const reminderIntroTextEl = document.getElementById("reminderIntroText");
+const reminderOutroTextEl = document.getElementById("reminderOutroText");
 const volumeEl = document.getElementById("volume");
 const volumeValueEl = document.getElementById("volumeValue");
 const exercisesEl = document.getElementById("exercises");
@@ -36,6 +40,8 @@ async function load() {
   endTimeEl.value = settings.endTime;
   intervalMinutesEl.value = settings.intervalMinutes;
   repeatReminderMinutesEl.value = settings.repeatReminderMinutes;
+  reminderIntroTextEl.value = settings.reminderIntroText;
+  reminderOutroTextEl.value = settings.reminderOutroText;
   volumeEl.value = Math.round(Number(settings.volume || DEFAULTS.volume) * 100);
   volumeValueEl.textContent = `${volumeEl.value}%`;
   exercisesEl.value = (settings.exercises || []).join("\n");
@@ -64,6 +70,10 @@ function validate() {
     return "Повтор сигнала должен быть не меньше 1 минуты.";
   }
 
+  if (!String(reminderIntroTextEl.value).trim()) {
+    return "Заполните начало фразы.";
+  }
+
   if (list.length === 0) {
     return "Добавьте хотя бы одно упражнение.";
   }
@@ -77,6 +87,8 @@ function collectSettings() {
     endTime: endTimeEl.value,
     intervalMinutes: Number(intervalMinutesEl.value),
     repeatReminderMinutes: Number(repeatReminderMinutesEl.value),
+    reminderIntroText: String(reminderIntroTextEl.value).trim(),
+    reminderOutroText: String(reminderOutroTextEl.value).trim(),
     volume: Number(volumeEl.value) / 100,
     soundFile: "sounds/bell.wav",
     exercises: parseExercises(exercisesEl.value)
@@ -126,7 +138,9 @@ async function resetQueue() {
 function testSound() {
   chrome.runtime.sendMessage({
     type: "PLAY_PREVIEW",
-    volume: Number(volumeEl.value) / 100
+    volume: Number(volumeEl.value) / 100,
+    reminderIntroText: String(reminderIntroTextEl.value).trim(),
+    reminderOutroText: String(reminderOutroTextEl.value).trim()
   });
   flashStatus("Проверяю голосовой сигнал", "", 1200);
 }

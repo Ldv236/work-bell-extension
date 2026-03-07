@@ -69,6 +69,7 @@
 
     input[type="time"],
     input[type="number"],
+    input[type="text"],
     textarea {
       width: 100%;
       box-sizing: border-box;
@@ -177,12 +178,24 @@
         </div>
 
         <div class="row">
+          <label for="reminderIntroText">Начало фразы</label>
+          <input id="reminderIntroText" type="text" />
+          <div class="hint">Эта часть будет произнесена перед названием упражнения.</div>
+        </div>
+
+        <div class="row">
+          <label for="reminderOutroText">Конец фразы</label>
+          <input id="reminderOutroText" type="text" />
+          <div class="hint">Эта часть будет произнесена после названия упражнения. Можно оставить пустой.</div>
+        </div>
+
+        <div class="row">
           <label for="volume">Громкость сигнала</label>
           <div class="range-row">
             <input id="volume" type="range" min="0" max="100" step="5" />
             <div id="volumeValue" class="value">70%</div>
           </div>
-          <div class="hint">Первый сигнал проговаривает полную фразу, повторные сигналы произносят только название упражнения.</div>
+          <div class="hint">Полный сигнал: начало фразы + упражнение + конец фразы. Повторы: только название упражнения.</div>
         </div>
       </div>
 

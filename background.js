@@ -3,6 +3,8 @@
   endTime: "22:00",
   intervalMinutes: 60,
   repeatReminderMinutes: 3,
+  reminderIntroText: "Пора размяться.",
+  reminderOutroText: "Подтвердите в приложении.",
   volume: 0.7,
   soundFile: "sounds/bell.wav",
   exercises: [
@@ -38,6 +40,8 @@ async function getSettings() {
     endTime: raw.endTime,
     intervalMinutes: Math.max(1, Number(raw.intervalMinutes || DEFAULTS.intervalMinutes)),
     repeatReminderMinutes: Math.max(1, Number(raw.repeatReminderMinutes || DEFAULTS.repeatReminderMinutes)),
+    reminderIntroText: String(raw.reminderIntroText ?? DEFAULTS.reminderIntroText).trim() || DEFAULTS.reminderIntroText,
+    reminderOutroText: String(raw.reminderOutroText ?? DEFAULTS.reminderOutroText).trim(),
     volume: Math.max(0, Math.min(1, Number(raw.volume ?? DEFAULTS.volume))),
     soundFile: DEFAULTS.soundFile,
     exercises: exercises.length > 0 ? exercises : DEFAULTS.exercises
@@ -204,9 +208,13 @@ function delay(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function buildReminderSpeech(exercise) {
+function buildReminderSpeech(exercise, settings) {
+  const parts = [settings.reminderIntroText, exercise, settings.reminderOutroText]
+    .map((item) => String(item || "").trim())
+    .filter(Boolean);
+
   return {
-    introText: `Пора размяться. Сделайте упражнение: ${exercise}. Подтвердите в приложении.`,
+    introText: parts.join(" "),
     repeatText: exercise
   };
 }
@@ -240,7 +248,7 @@ async function sendOffscreenMessage(message) {
 }
 
 async function startReminderLoop(settings, reminder) {
-  const speech = buildReminderSpeech(reminder.exercise);
+  const speech = buildReminderSpeech(reminder.exercise, settings);
   await sendOffscreenMessage({
     type: OFFSCREEN_START_LOOP,
     reminderId: reminder.startedAt,
@@ -256,11 +264,18 @@ async function stopReminderLoop() {
   await sendOffscreenMessage({ type: OFFSCREEN_STOP_LOOP });
 }
 
-async function playPreview(settings, volumeOverride) {
+async function playPreview(settings, volumeOverride, introOverride, outroOverride) {
+  const previewSettings = {
+    ...settings,
+    reminderIntroText: String(introOverride ?? settings.reminderIntroText).trim() || DEFAULTS.reminderIntroText,
+    reminderOutroText: String(outroOverride ?? settings.reminderOutroText).trim()
+  };
+  const speech = buildReminderSpeech(settings.exercises[0] || "приседания", previewSettings);
+
   await sendOffscreenMessage({
     type: OFFSCREEN_PLAY_PREVIEW,
-    introText: "Проверка сигнала. Пора размяться и сделать упражнение.",
-    repeatText: "Пора размяться.",
+    introText: speech.introText,
+    repeatText: speech.repeatText,
     soundFile: settings.soundFile,
     volume: Math.max(0, Math.min(1, Number(volumeOverride ?? settings.volume)))
   });
@@ -634,7 +649,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
     if (message?.type === "PLAY_PREVIEW") {
       const settings = await getSettings();
-      await playPreview(settings, message.volume);
+      await playPreview(settings, message.volume, message.reminderIntroText, message.reminderOutroText);
       sendResponse({ ok: true });
       return;
     }
