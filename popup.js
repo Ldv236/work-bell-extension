@@ -121,7 +121,7 @@ function refresh() {
     if (hasActiveReminder) {
       setAlertMode();
       setActionState(true, false);
-      statusEl.textContent = isReminderMode ? "Выберите действие" : "Сейчас нужно сделать упражнение";
+      statusEl.textContent = isReminderMode ? "Сейчас сделать" : "Сейчас нужно сделать упражнение";
       exerciseEl.textContent = isReminderMode ? pendingReminder.exercise : `Упражнение: ${pendingReminder.exercise}`;
       nextEl.textContent = isReminderMode
         ? `Повтор сигнала: каждые ${formatMinutes(settings.repeatReminderMinutes)}`

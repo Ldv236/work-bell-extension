@@ -9,6 +9,7 @@ const DEFAULTS = {
   intervalMinutes: 60,
   repeatReminderMinutes: 3,
   scheduleMode: "after_confirmation",
+  queueOrderMode: "random",
   audioMode: "voice",
   reminderIntroText: "Пора размяться. Выполни упражнение",
   reminderOutroText: ". Подтвердите в приложении.",
@@ -31,6 +32,7 @@ const DEFAULTS = {
 const startTimeEl = document.getElementById("startTime");
 const endTimeEl = document.getElementById("endTime");
 const scheduleModeEl = document.getElementById("scheduleMode");
+const queueOrderModeEl = document.getElementById("queueOrderMode");
 const audioModeEl = document.getElementById("audioMode");
 const intervalMinutesEl = document.getElementById("intervalMinutes");
 const repeatReminderMinutesEl = document.getElementById("repeatReminderMinutes");
@@ -77,6 +79,7 @@ async function load() {
   const reminderOutroTextRaw = String(rawSettings.reminderOutroText ?? DEFAULTS.reminderOutroText).trim();
   const settings = {
     ...rawSettings,
+    queueOrderMode: rawSettings.queueOrderMode || DEFAULTS.queueOrderMode,
     exercises: migratedExercises.exercises.length > 0 ? migratedExercises.exercises : DEFAULTS.exercises,
     reminderIntroText: reminderIntroTextRaw === LEGACY_REMINDER_INTRO_TEXT
       ? DEFAULTS.reminderIntroText
@@ -99,6 +102,7 @@ async function load() {
   startTimeEl.value = settings.startTime;
   endTimeEl.value = settings.endTime;
   scheduleModeEl.value = settings.scheduleMode || DEFAULTS.scheduleMode;
+  queueOrderModeEl.value = settings.queueOrderMode || DEFAULTS.queueOrderMode;
   audioModeEl.value = settings.audioMode || DEFAULTS.audioMode;
   intervalMinutesEl.value = settings.intervalMinutes;
   repeatReminderMinutesEl.value = settings.repeatReminderMinutes;
@@ -126,6 +130,10 @@ function validate() {
 
   if (!["after_confirmation", "fixed_slots"].includes(scheduleModeEl.value)) {
     return "Выберите корректный режим интервала.";
+  }
+
+  if (!["random", "listed"].includes(queueOrderModeEl.value)) {
+    return "Выберите корректный порядок очереди.";
   }
 
   if (!["voice", "beep"].includes(audioModeEl.value)) {
@@ -156,6 +164,7 @@ function collectSettings() {
     startTime: startTimeEl.value,
     endTime: endTimeEl.value,
     scheduleMode: scheduleModeEl.value,
+    queueOrderMode: queueOrderModeEl.value,
     audioMode: audioModeEl.value,
     intervalMinutes: Number(intervalMinutesEl.value),
     repeatReminderMinutes: Number(repeatReminderMinutesEl.value),

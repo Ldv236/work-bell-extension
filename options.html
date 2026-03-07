@@ -19,52 +19,66 @@
     body {
       margin: 0;
       background:
-        radial-gradient(circle at top left, rgba(177, 90, 43, 0.12), transparent 35%),
+        radial-gradient(circle at top left, rgba(177, 90, 43, 0.10), transparent 34%),
         linear-gradient(180deg, #efe6d5 0%, var(--bg) 100%);
       font-family: "Segoe UI", sans-serif;
+      font-size: 14px;
       color: var(--text);
     }
 
     .wrap {
-      max-width: 920px;
+      max-width: 940px;
       margin: 0 auto;
-      padding: 28px 18px 40px;
+      padding: 22px 16px 32px;
     }
 
     h1 {
-      margin: 0 0 8px;
-      font-size: 32px;
+      margin: 0 0 6px;
+      font-size: 28px;
     }
 
     .lead {
-      margin: 0 0 20px;
+      margin: 0 0 16px;
       color: var(--muted);
-      line-height: 1.5;
+      line-height: 1.45;
       max-width: 760px;
+      font-size: 13px;
+    }
+
+    .stack {
+      display: grid;
+      gap: 12px;
     }
 
     .panel {
       background: var(--panel);
       border: 1px solid var(--border);
-      border-radius: 18px;
-      padding: 20px;
-      box-shadow: 0 14px 40px rgba(72, 49, 25, 0.08);
+      border-radius: 16px;
+      padding: 14px;
+      box-shadow: 0 10px 28px rgba(72, 49, 25, 0.06);
+    }
+
+    .panel-title {
+      margin: 0 0 10px;
+      font-size: 15px;
+      font-weight: 700;
     }
 
     .grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-      gap: 14px;
+      grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+      gap: 10px 12px;
     }
 
     .row {
-      margin: 0 0 14px;
+      margin: 0;
     }
 
     label {
       display: block;
-      margin-bottom: 6px;
+      margin-bottom: 4px;
       font-weight: 600;
+      font-size: 13px;
     }
 
     input[type="time"],
@@ -74,30 +88,31 @@
     textarea {
       width: 100%;
       box-sizing: border-box;
-      padding: 10px 12px;
+      padding: 8px 10px;
       border: 1px solid var(--border);
-      border-radius: 12px;
+      border-radius: 10px;
       background: #fffdfb;
       color: var(--text);
       font: inherit;
     }
 
     textarea {
-      min-height: 220px;
+      min-height: 180px;
       resize: vertical;
+      line-height: 1.35;
     }
 
     .hint {
-      margin-top: 6px;
+      margin-top: 4px;
       color: var(--muted);
-      font-size: 13px;
-      line-height: 1.4;
+      font-size: 12px;
+      line-height: 1.35;
     }
 
     .range-row {
       display: flex;
       align-items: center;
-      gap: 12px;
+      gap: 10px;
     }
 
     input[type="range"] {
@@ -105,25 +120,26 @@
     }
 
     .value {
-      min-width: 48px;
+      min-width: 42px;
       font-weight: 700;
       color: var(--accent-dark);
       text-align: right;
+      font-size: 13px;
     }
 
     .btns {
       display: flex;
-      gap: 10px;
+      gap: 8px;
       align-items: center;
-      margin-top: 16px;
+      margin-top: 14px;
       flex-wrap: wrap;
     }
 
     button {
-      min-height: 42px;
-      padding: 0 16px;
+      min-height: 36px;
+      padding: 0 14px;
       border: 0;
-      border-radius: 12px;
+      border-radius: 10px;
       background: var(--accent);
       color: #fff;
       font: inherit;
@@ -134,6 +150,10 @@
     button.secondary {
       background: #e9dfd1;
       color: var(--text);
+    }
+
+    #status {
+      font-size: 13px;
     }
 
     #status.ok {
@@ -152,84 +172,104 @@
       Расширение работает каждый день в промежутке от времени "с" до времени "по". Внутри этого окна оно может либо идти по фиксированной сетке времени, либо считать следующий сигнал от подтверждения предыдущего. Пока подтверждения нет, активный сигнал продолжает повторяться с указанной частотой.
     </p>
 
-    <div class="panel">
-      <div class="grid">
-        <div class="row">
-          <label for="startTime">Время с</label>
-          <input id="startTime" type="time" />
-          <div class="hint">Первый слот напоминания начинается ровно с этого времени.</div>
-        </div>
-
-        <div class="row">
-          <label for="endTime">Время по</label>
-          <input id="endTime" type="time" />
-          <div class="hint">После этого времени новые сигналы не создаются до следующего дня.</div>
-        </div>
-
-        <div class="row">
-          <label for="scheduleMode">Режим интервала</label>
-          <select id="scheduleMode">
-            <option value="after_confirmation">От предыдущего подтверждения</option>
-            <option value="fixed_slots">По фиксированной сетке времени</option>
-          </select>
-          <div class="hint">Рекомендуемый режим: от предыдущего подтверждения. В фиксированном режиме пропущенные слоты не догоняются.</div>
-        </div>
-
-        <div class="row">
-          <label for="audioMode">Тип сигнала</label>
-          <select id="audioMode">
-            <option value="voice">Голос</option>
-            <option value="beep">Бип</option>
-          </select>
-          <div class="hint">По умолчанию используется голос. В режиме бипа и первый сигнал, и повторы будут проигрываться коротким звуком.</div>
-        </div>
-
-        <div class="row">
-          <label for="intervalMinutes">Основной интервал, минут</label>
-          <input id="intervalMinutes" type="number" min="1" step="1" />
-          <div class="hint">Как часто запускать новые упражнения: либо по сетке, либо после вашего подтверждения.</div>
-        </div>
-
-        <div class="row">
-          <label for="repeatReminderMinutes">Повтор сигнала, минут</label>
-          <input id="repeatReminderMinutes" type="number" min="1" step="1" />
-          <div class="hint">Как часто повторять уже активное напоминание, пока вы не нажмете "Сделано" или "Пропущу".</div>
-        </div>
-
-        <div class="row">
-          <label for="reminderIntroText">Начало фразы</label>
-          <input id="reminderIntroText" type="text" />
-          <div class="hint">Эта часть будет произнесена перед названием упражнения.</div>
-        </div>
-
-        <div class="row">
-          <label for="reminderOutroText">Конец фразы</label>
-          <input id="reminderOutroText" type="text" />
-          <div class="hint">Эта часть будет произнесена после названия упражнения. Можно оставить пустой.</div>
-        </div>
-
-        <div class="row">
-          <label for="volume">Громкость сигнала</label>
-          <div class="range-row">
-            <input id="volume" type="range" min="0" max="100" step="5" />
-            <div id="volumeValue" class="value">70%</div>
+    <div class="stack">
+      <section class="panel">
+        <h2 class="panel-title">Период</h2>
+        <div class="grid">
+          <div class="row">
+            <label for="startTime">Время с</label>
+            <input id="startTime" type="time" />
+            <div class="hint">Первый слот начинается ровно с этого времени.</div>
           </div>
-          <div class="hint">В голосовом режиме: полный сигнал = начало фразы + упражнение + конец фразы, повторы = только название упражнения.</div>
+          <div class="row">
+            <label for="endTime">Время по</label>
+            <input id="endTime" type="time" />
+            <div class="hint">После этого времени новые сигналы создаются только на следующий день.</div>
+          </div>
         </div>
-      </div>
+      </section>
 
-      <div class="row">
-        <label for="exercises">Список упражнений, по одному на строку</label>
-        <textarea id="exercises"></textarea>
-        <div class="hint">Внутри дня упражнения идут без повторов по очереди. Когда список заканчивается, формируется новая случайная очередь.</div>
-      </div>
+      <section class="panel">
+        <h2 class="panel-title">Интервал</h2>
+        <div class="grid">
+          <div class="row">
+            <label for="scheduleMode">Режим интервала</label>
+            <select id="scheduleMode">
+              <option value="after_confirmation">От предыдущего подтверждения</option>
+              <option value="fixed_slots">По фиксированной сетке времени</option>
+            </select>
+            <div class="hint">Рекомендуемый режим. В фиксированном режиме пропущенные слоты не догоняются.</div>
+          </div>
+          <div class="row">
+            <label for="intervalMinutes">Основной интервал, минут</label>
+            <input id="intervalMinutes" type="number" min="1" step="1" />
+            <div class="hint">Частота новых упражнений.</div>
+          </div>
+          <div class="row">
+            <label for="repeatReminderMinutes">Повтор сигнала, минут</label>
+            <input id="repeatReminderMinutes" type="number" min="1" step="1" />
+            <div class="hint">Как часто повторять активное напоминание.</div>
+          </div>
+        </div>
+      </section>
 
-      <div class="btns">
-        <button id="save">Сохранить</button>
-        <button id="resetQueue" class="secondary">Обновить очередь</button>
-        <button id="testSound" class="secondary">Проверить сигнал</button>
-        <span id="status"></span>
-      </div>
+      <section class="panel">
+        <h2 class="panel-title">Сигнал</h2>
+        <div class="grid">
+          <div class="row">
+            <label for="audioMode">Тип сигнала</label>
+            <select id="audioMode">
+              <option value="voice">Голос</option>
+              <option value="beep">Бип</option>
+            </select>
+            <div class="hint">В режиме бипа и первый сигнал, и повторы будут коротким звуком.</div>
+          </div>
+          <div class="row">
+            <label for="reminderIntroText">Начало фразы</label>
+            <input id="reminderIntroText" type="text" />
+            <div class="hint">Будет сказано перед названием упражнения.</div>
+          </div>
+          <div class="row">
+            <label for="reminderOutroText">Конец фразы</label>
+            <input id="reminderOutroText" type="text" />
+            <div class="hint">Будет сказано после названия упражнения.</div>
+          </div>
+          <div class="row">
+            <label for="volume">Громкость</label>
+            <div class="range-row">
+              <input id="volume" type="range" min="0" max="100" step="5" />
+              <div id="volumeValue" class="value">70%</div>
+            </div>
+            <div class="hint">В голосе: первый сигнал полный, повторы только с названием упражнения.</div>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2 class="panel-title">Упражнения</h2>
+        <div class="grid">
+          <div class="row">
+            <label for="queueOrderMode">Формирование очереди</label>
+            <select id="queueOrderMode">
+              <option value="random">Случайный порядок</option>
+              <option value="listed">Прямой порядок по списку</option>
+            </select>
+            <div class="hint">Определяет порядок новой дневной очереди упражнений.</div>
+          </div>
+        </div>
+        <div class="row" style="margin-top: 10px;">
+          <label for="exercises">Список упражнений, по одному на строку</label>
+          <textarea id="exercises"></textarea>
+          <div class="hint">Внутри дня упражнения проходят без повторов. Когда список заканчивается, формируется новая очередь по выбранному правилу.</div>
+        </div>
+      </section>
+    </div>
+
+    <div class="btns">
+      <button id="save">Сохранить</button>
+      <button id="resetQueue" class="secondary">Обновить очередь</button>
+      <button id="testSound" class="secondary">Проверить сигнал</button>
+      <span id="status"></span>
     </div>
   </div>
 

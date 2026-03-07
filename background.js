@@ -9,6 +9,7 @@ const DEFAULTS = {
   intervalMinutes: 60,
   repeatReminderMinutes: 3,
   scheduleMode: "after_confirmation",
+  queueOrderMode: "random",
   audioMode: "voice",
   reminderIntroText: "Пора размяться. Выполни упражнение",
   reminderOutroText: ". Подтвердите в приложении.",
@@ -30,6 +31,8 @@ const DEFAULTS = {
 
 const SCHEDULE_MODE_FIXED = "fixed_slots";
 const SCHEDULE_MODE_AFTER_CONFIRMATION = "after_confirmation";
+const QUEUE_ORDER_RANDOM = "random";
+const QUEUE_ORDER_LISTED = "listed";
 const AUDIO_MODE_VOICE = "voice";
 const AUDIO_MODE_BEEP = "beep";
 const TICK_ALARM = "work-bell-tick";
@@ -72,6 +75,9 @@ async function getSettings() {
   const scheduleMode = raw.scheduleMode === SCHEDULE_MODE_FIXED
     ? SCHEDULE_MODE_FIXED
     : SCHEDULE_MODE_AFTER_CONFIRMATION;
+  const queueOrderMode = raw.queueOrderMode === QUEUE_ORDER_LISTED
+    ? QUEUE_ORDER_LISTED
+    : QUEUE_ORDER_RANDOM;
   const audioMode = raw.audioMode === AUDIO_MODE_BEEP ? AUDIO_MODE_BEEP : AUDIO_MODE_VOICE;
   const migratedExercises = migrateExercises(raw.exercises);
   const reminderIntroTextRaw = String(raw.reminderIntroText ?? DEFAULTS.reminderIntroText).trim();
@@ -100,6 +106,7 @@ async function getSettings() {
     intervalMinutes: Math.max(1, Number(raw.intervalMinutes || DEFAULTS.intervalMinutes)),
     repeatReminderMinutes: Math.max(1, Number(raw.repeatReminderMinutes || DEFAULTS.repeatReminderMinutes)),
     scheduleMode,
+    queueOrderMode,
     audioMode,
     reminderIntroText,
     reminderOutroText,
@@ -272,6 +279,10 @@ function shuffleExercises(exercises) {
   return pool;
 }
 
+function buildExerciseQueue(exercises, queueOrderMode) {
+  return queueOrderMode === QUEUE_ORDER_LISTED ? [...exercises] : shuffleExercises(exercises);
+}
+
 async function normalizeDayState(rawState, settings, now = new Date(), options = {}) {
   const currentDayKey = todayKey(now);
   let queueDayKey = rawState.queueDayKey;
@@ -287,7 +298,7 @@ async function normalizeDayState(rawState, settings, now = new Date(), options =
   }
 
   if (options.resetQueue || queueRemaining.length === 0) {
-    queueRemaining = shuffleExercises(settings.exercises);
+    queueRemaining = buildExerciseQueue(settings.exercises, settings.queueOrderMode);
     hasChanges = true;
   }
 
@@ -629,7 +640,7 @@ async function getRuntimeState(now = new Date()) {
 
 async function triggerReminder(now, settings, state) {
   const queueRemaining = sanitizeQueue(state.queueRemaining, settings.exercises);
-  const effectiveQueue = queueRemaining.length > 0 ? queueRemaining : shuffleExercises(settings.exercises);
+  const effectiveQueue = queueRemaining.length > 0 ? queueRemaining : buildExerciseQueue(settings.exercises, settings.queueOrderMode);
   const exercise = effectiveQueue[0] || settings.exercises[0];
   const nextQueue = effectiveQueue.slice(1);
   const reminder = {
