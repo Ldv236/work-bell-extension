@@ -14,6 +14,7 @@
       --border: #ded4c4;
       --warn: #fff0cc;
       --warn-border: #efc56d;
+      --soft: #ece2d5;
     }
 
     body {
@@ -24,14 +25,26 @@
       color: var(--text);
     }
 
+    body.reminder {
+      width: auto;
+    }
+
     .wrap {
       padding: 16px;
+    }
+
+    body.reminder .wrap {
+      padding: 20px;
     }
 
     .title {
       margin: 0 0 6px;
       font-size: 20px;
       font-weight: 700;
+    }
+
+    body.reminder .title {
+      font-size: 24px;
     }
 
     .subtitle {
@@ -41,12 +54,22 @@
       line-height: 1.45;
     }
 
+    body.reminder .subtitle {
+      font-size: 14px;
+      margin-bottom: 18px;
+    }
+
     .card {
       background: var(--panel);
       border: 1px solid var(--border);
       border-radius: 14px;
       padding: 12px;
       box-shadow: 0 10px 28px rgba(72, 49, 25, 0.08);
+    }
+
+    body.reminder .card {
+      padding: 18px;
+      border-radius: 18px;
     }
 
     .line {
@@ -67,6 +90,39 @@
       font-weight: 700;
     }
 
+    body.reminder .alert {
+      padding: 14px;
+      font-size: 18px;
+      border-radius: 14px;
+    }
+
+    #exercise {
+      min-height: 22px;
+      font-weight: 600;
+    }
+
+    body.reminder #exercise {
+      min-height: 32px;
+      font-size: 22px;
+      line-height: 1.35;
+      margin-bottom: 14px;
+    }
+
+    .today-box {
+      margin-top: 12px;
+      padding: 10px;
+      border: 1px dashed var(--border);
+      border-radius: 10px;
+      background: #fffaf2;
+      font-size: 13px;
+      line-height: 1.45;
+      white-space: pre-line;
+    }
+
+    .today-box.hidden {
+      display: none;
+    }
+
     .tip {
       margin-top: 10px;
       padding-top: 10px;
@@ -83,6 +139,11 @@
       margin-top: 12px;
     }
 
+    body.reminder .btns {
+      margin-top: 16px;
+      gap: 10px;
+    }
+
     button {
       min-height: 38px;
       border: 0;
@@ -91,10 +152,17 @@
       color: #ffffff;
       font-weight: 600;
       cursor: pointer;
+      font: inherit;
+    }
+
+    body.reminder button {
+      min-height: 48px;
+      font-size: 16px;
+      border-radius: 12px;
     }
 
     button.secondary {
-      background: #ece2d5;
+      background: var(--soft);
       color: var(--text);
     }
 
@@ -112,11 +180,13 @@
       <div id="status" class="line">Загрузка...</div>
       <div id="exercise" class="line"></div>
       <div id="next" class="line muted"></div>
+      <div id="todayHistory" class="today-box hidden"></div>
       <div class="btns">
         <button id="doneBtn" disabled>Сделано</button>
+        <button id="todayBtn" class="secondary">Сегодня</button>
         <button id="openOptionsBtn" class="secondary">Настройки</button>
       </div>
-      <div class="tip">Кнопка "Сделано" активна только в момент реального сигнала.</div>
+      <div id="tip" class="tip">Кнопка "Сделано" активна только в момент реального сигнала.</div>
     </div>
   </div>
   <script src="popup.js"></script>

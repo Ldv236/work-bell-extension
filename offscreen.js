@@ -57,6 +57,11 @@ function playFallback(soundFile, volume) {
 
 function speakOnce(text, soundFile, volume) {
   return new Promise((resolve) => {
+    if (!text) {
+      resolve();
+      return;
+    }
+
     if (!hasSpeechSupport()) {
       playFallback(soundFile, volume);
       resolve();
@@ -102,7 +107,7 @@ function speakOnce(text, soundFile, volume) {
   });
 }
 
-async function startLoop(reminderId, text, soundFile, volume, repeatMs) {
+async function startLoop(reminderId, introText, repeatText, soundFile, volume, repeatMs) {
   if (loopConfig && loopConfig.reminderId === reminderId) {
     return;
   }
@@ -111,33 +116,42 @@ async function startLoop(reminderId, text, soundFile, volume, repeatMs) {
 
   loopConfig = {
     reminderId,
-    text,
+    introText,
+    repeatText,
     soundFile,
     volume: Math.max(0, Math.min(1, Number(volume ?? 0.7))),
     repeatMs: Math.max(3000, Number(repeatMs || 20000))
   };
 
-  const playAndSchedule = async () => {
+  const firstConfig = loopConfig;
+  await speakOnce(firstConfig.introText, firstConfig.soundFile, firstConfig.volume);
+
+  if (!loopConfig || loopConfig !== firstConfig) {
+    return;
+  }
+
+  const playRepeat = async () => {
     if (!loopConfig) {
       return;
     }
 
     const currentConfig = loopConfig;
-    await speakOnce(currentConfig.text, currentConfig.soundFile, currentConfig.volume);
+    await speakOnce(currentConfig.repeatText, currentConfig.soundFile, currentConfig.volume);
     if (!loopConfig || loopConfig !== currentConfig) {
       return;
     }
 
     clearLoopTimer();
-    loopTimer = setTimeout(playAndSchedule, loopConfig.repeatMs);
+    loopTimer = setTimeout(playRepeat, currentConfig.repeatMs);
   };
 
-  await playAndSchedule();
+  clearLoopTimer();
+  loopTimer = setTimeout(playRepeat, firstConfig.repeatMs);
 }
 
-async function playPreview(text, soundFile, volume) {
+async function playPreview(introText, soundFile, volume) {
   stopEverything();
-  await speakOnce(text, soundFile, volume);
+  await speakOnce(introText, soundFile, volume);
 }
 
 if (hasSpeechSupport()) {
@@ -148,7 +162,14 @@ if (hasSpeechSupport()) {
 
 chrome.runtime.onMessage.addListener((message) => {
   if (message?.type === OFFSCREEN_START_LOOP) {
-    startLoop(message.reminderId, message.text, message.soundFile, message.volume, message.repeatMs);
+    startLoop(
+      message.reminderId,
+      message.introText,
+      message.repeatText,
+      message.soundFile,
+      message.volume,
+      message.repeatMs
+    );
     return;
   }
 
@@ -159,6 +180,6 @@ chrome.runtime.onMessage.addListener((message) => {
   }
 
   if (message?.type === OFFSCREEN_PLAY_PREVIEW) {
-    playPreview(message.text, message.soundFile, message.volume);
+    playPreview(message.introText, message.soundFile, message.volume);
   }
 });

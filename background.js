@@ -21,8 +21,8 @@ const TICK_ALARM = "work-bell-tick";
 const NOTIFICATION_ID = "work-bell-reminder";
 const REMINDER_REPEAT_MS = 20000;
 const ACTIVE_TICK_GAP_MS = 2 * 60000;
-const REMINDER_WINDOW_WIDTH = 460;
-const REMINDER_WINDOW_HEIGHT = 430;
+const REMINDER_WINDOW_WIDTH = 560;
+const REMINDER_WINDOW_HEIGHT = 560;
 const OFFSCREEN_START_LOOP = "OFFSCREEN_START_LOOP";
 const OFFSCREEN_STOP_LOOP = "OFFSCREEN_STOP_LOOP";
 const OFFSCREEN_PLAY_PREVIEW = "OFFSCREEN_PLAY_PREVIEW";
@@ -50,7 +50,10 @@ async function getState() {
     lastCompletedAt: null,
     lastExercise: null,
     lastTickAt: null,
-    reminderWindowId: null
+    reminderWindowId: null,
+    queueDayKey: null,
+    queueRemaining: [],
+    completedToday: []
   });
 }
 
@@ -64,6 +67,13 @@ function atDay(hhmm, baseDate) {
   const date = new Date(baseDate);
   date.setHours(hours, minutes, 0, 0);
   return date;
+}
+
+function todayKey(now = new Date()) {
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }
 
 function isValidWindow(settings, baseDate = new Date()) {
@@ -125,10 +135,68 @@ function computeNextDueAfter(now, settings) {
   return computeSlot(now, settings, false);
 }
 
-function pickExercise(exercises) {
-  const pool = Array.isArray(exercises) && exercises.length > 0 ? exercises : DEFAULTS.exercises;
-  const index = Math.floor(Math.random() * pool.length);
-  return pool[index];
+function sanitizeQueue(queue, fallbackExercises) {
+  const validSet = new Set(fallbackExercises);
+  return Array.isArray(queue)
+    ? queue.map((item) => String(item).trim()).filter((item) => item && validSet.has(item))
+    : [];
+}
+
+function sanitizeCompletedToday(entries) {
+  if (!Array.isArray(entries)) {
+    return [];
+  }
+
+  return entries
+    .map((entry) => ({
+      exercise: String(entry?.exercise || "").trim(),
+      completedAt: entry?.completedAt ? String(entry.completedAt) : null
+    }))
+    .filter((entry) => entry.exercise);
+}
+
+function shuffleExercises(exercises) {
+  const pool = [...exercises];
+  for (let index = pool.length - 1; index > 0; index -= 1) {
+    const swapIndex = Math.floor(Math.random() * (index + 1));
+    [pool[index], pool[swapIndex]] = [pool[swapIndex], pool[index]];
+  }
+  return pool;
+}
+
+async function normalizeDayState(rawState, settings, now = new Date(), options = {}) {
+  const currentDayKey = todayKey(now);
+  let queueDayKey = rawState.queueDayKey;
+  let queueRemaining = sanitizeQueue(rawState.queueRemaining, settings.exercises);
+  let completedToday = sanitizeCompletedToday(rawState.completedToday);
+  let hasChanges = false;
+
+  if (queueDayKey !== currentDayKey) {
+    queueDayKey = currentDayKey;
+    queueRemaining = [];
+    completedToday = [];
+    hasChanges = true;
+  }
+
+  if (options.resetQueue || queueRemaining.length === 0) {
+    queueRemaining = shuffleExercises(settings.exercises);
+    hasChanges = true;
+  }
+
+  if (hasChanges) {
+    await chrome.storage.local.set({
+      queueDayKey,
+      queueRemaining,
+      completedToday
+    });
+  }
+
+  return {
+    ...rawState,
+    queueDayKey,
+    queueRemaining,
+    completedToday
+  };
 }
 
 function delay(ms) {
@@ -136,7 +204,10 @@ function delay(ms) {
 }
 
 function buildReminderSpeech(exercise) {
-  return `Пора размяться. Сделайте упражнение: ${exercise}. Подтвердите выполнение кнопкой Сделано.`;
+  return {
+    introText: `Пора размяться. Сделайте упражнение: ${exercise}. Подтвердите выполнение кнопкой Сделано.`,
+    repeatText: exercise
+  };
 }
 
 async function ensureOffscreen() {
@@ -168,10 +239,12 @@ async function sendOffscreenMessage(message) {
 }
 
 async function startReminderLoop(settings, reminder) {
+  const speech = buildReminderSpeech(reminder.exercise);
   await sendOffscreenMessage({
     type: OFFSCREEN_START_LOOP,
     reminderId: reminder.startedAt,
-    text: buildReminderSpeech(reminder.exercise),
+    introText: speech.introText,
+    repeatText: speech.repeatText,
     soundFile: settings.soundFile,
     volume: settings.volume,
     repeatMs: REMINDER_REPEAT_MS
@@ -185,7 +258,8 @@ async function stopReminderLoop() {
 async function playPreview(settings, volumeOverride) {
   await sendOffscreenMessage({
     type: OFFSCREEN_PLAY_PREVIEW,
-    text: "Проверка сигнала. Пора размяться и сделать упражнение.",
+    introText: "Проверка сигнала. Пора размяться и сделать упражнение.",
+    repeatText: "Пора размяться.",
     soundFile: settings.soundFile,
     volume: Math.max(0, Math.min(1, Number(volumeOverride ?? settings.volume)))
   });
@@ -293,10 +367,22 @@ function normalizeNextDue(state, now, settings) {
   return fallback;
 }
 
+function buildTodaySummary(completedToday) {
+  const counts = new Map();
+  for (const entry of completedToday) {
+    counts.set(entry.exercise, (counts.get(entry.exercise) || 0) + 1);
+  }
+
+  return Array.from(counts.entries())
+    .map(([exercise, count]) => ({ exercise, count }))
+    .sort((left, right) => right.count - left.count || left.exercise.localeCompare(right.exercise, "ru"));
+}
+
 async function getRuntimeState(now = new Date()) {
   const settings = await getSettings();
   const rawState = await getState();
-  let pendingReminder = rawState.pendingReminder;
+  const stateWithDay = await normalizeDayState(rawState, settings, now);
+  let pendingReminder = stateWithDay.pendingReminder;
 
   if (!isValidWindow(settings, now)) {
     await chrome.storage.local.set({
@@ -308,11 +394,12 @@ async function getRuntimeState(now = new Date()) {
     return {
       settings,
       state: {
-        ...rawState,
+        ...stateWithDay,
         nextDueAt: null,
         pendingReminder: null,
         lastTickAt: now.toISOString(),
-        hasActiveReminder: false
+        hasActiveReminder: false,
+        todaySummary: buildTodaySummary(stateWithDay.completedToday)
       },
       validationError: "INVALID_WINDOW"
     };
@@ -322,9 +409,9 @@ async function getRuntimeState(now = new Date()) {
 
   if (!pendingReminder && notificationVisible) {
     pendingReminder = {
-      exercise: rawState.lastExercise || "Сделайте упражнение",
-      dueAt: rawState.lastTickAt || now.toISOString(),
-      startedAt: rawState.lastTickAt || now.toISOString(),
+      exercise: stateWithDay.lastExercise || "Сделайте упражнение",
+      dueAt: stateWithDay.lastTickAt || now.toISOString(),
+      startedAt: stateWithDay.lastTickAt || now.toISOString(),
       restored: true
     };
 
@@ -341,21 +428,23 @@ async function getRuntimeState(now = new Date()) {
     return {
       settings,
       state: {
-        ...rawState,
+        ...stateWithDay,
         pendingReminder,
         lastExercise: pendingReminder.exercise,
         lastTickAt: now.toISOString(),
-        hasActiveReminder: true
+        hasActiveReminder: true,
+        todaySummary: buildTodaySummary(stateWithDay.completedToday)
       }
     };
   }
 
   const normalizedState = {
-    ...rawState,
+    ...stateWithDay,
     pendingReminder: null,
-    nextDueAt: normalizeNextDue(rawState, now, settings).toISOString(),
+    nextDueAt: normalizeNextDue(stateWithDay, now, settings).toISOString(),
     lastTickAt: now.toISOString(),
-    hasActiveReminder: false
+    hasActiveReminder: false,
+    todaySummary: buildTodaySummary(stateWithDay.completedToday)
   };
 
   await chrome.storage.local.set({
@@ -366,9 +455,13 @@ async function getRuntimeState(now = new Date()) {
   return { settings, state: normalizedState };
 }
 
-async function triggerReminder(now, settings) {
+async function triggerReminder(now, settings, state) {
+  const queueRemaining = sanitizeQueue(state.queueRemaining, settings.exercises);
+  const effectiveQueue = queueRemaining.length > 0 ? queueRemaining : shuffleExercises(settings.exercises);
+  const exercise = effectiveQueue[0] || settings.exercises[0];
+  const nextQueue = effectiveQueue.slice(1);
   const reminder = {
-    exercise: pickExercise(settings.exercises),
+    exercise,
     dueAt: now.toISOString(),
     startedAt: now.toISOString()
   };
@@ -377,7 +470,9 @@ async function triggerReminder(now, settings) {
     pendingReminder: reminder,
     nextDueAt: null,
     lastExercise: reminder.exercise,
-    lastTickAt: now.toISOString()
+    lastTickAt: now.toISOString(),
+    queueRemaining: nextQueue,
+    queueDayKey: todayKey(now)
   });
 
   await setBadgePending(true);
@@ -390,24 +485,46 @@ async function keepPendingReminderAlive(pendingReminder, settings) {
   await setBadgePending(true);
   await showReminderNotification(pendingReminder);
   await startReminderLoop(settings, pendingReminder);
+  await openReminderWindow();
 }
 
 async function rescheduleFromSettings() {
   const now = new Date();
   const state = await getState();
 
-  if (state.pendingReminder) {
-    return { ok: true, pending: true };
+  if (!state.pendingReminder) {
+    await chrome.storage.local.set({
+      nextDueAt: null,
+      lastTickAt: now.toISOString(),
+      lastExercise: null
+    });
   }
 
+  await tick();
+  return { ok: true, pending: Boolean(state.pendingReminder) };
+}
+
+async function resetQueueFromSettings() {
+  const now = new Date();
+  const settings = await getSettings();
+  const rawState = await getState();
+  const state = await normalizeDayState(rawState, settings, now, { resetQueue: true });
+
   await chrome.storage.local.set({
-    nextDueAt: null,
-    lastTickAt: now.toISOString(),
-    lastExercise: null
+    queueDayKey: todayKey(now),
+    queueRemaining: state.queueRemaining,
+    lastTickAt: now.toISOString()
   });
 
-  await tick();
-  return { ok: true, pending: false };
+  if (!state.pendingReminder) {
+    await chrome.storage.local.set({ nextDueAt: null });
+    await tick();
+  }
+
+  return {
+    ok: true,
+    queueLength: state.queueRemaining.length
+  };
 }
 
 async function tick() {
@@ -429,7 +546,7 @@ async function tick() {
   const nextDueAt = state.nextDueAt ? new Date(state.nextDueAt) : computeNextDueAtOrAfter(now, settings);
 
   if (now >= nextDueAt && isWithinWindow(nextDueAt, settings)) {
-    await triggerReminder(now, settings);
+    await triggerReminder(now, settings, state);
     return;
   }
 
@@ -439,13 +556,25 @@ async function tick() {
 async function handleDone() {
   const now = new Date();
   const settings = await getSettings();
+  const rawState = await getState();
+  const state = await normalizeDayState(rawState, settings, now);
+  const completedExercise = state.pendingReminder?.exercise || state.lastExercise || null;
+  const completedToday = [...state.completedToday];
+
+  if (completedExercise) {
+    completedToday.push({
+      exercise: completedExercise,
+      completedAt: now.toISOString()
+    });
+  }
 
   if (!isValidWindow(settings, now)) {
     await chrome.storage.local.set({
       pendingReminder: null,
       nextDueAt: null,
       lastCompletedAt: now.toISOString(),
-      lastTickAt: now.toISOString()
+      lastTickAt: now.toISOString(),
+      completedToday
     });
     await clearReminderPresentation();
     return { ok: true, nextDueAt: null };
@@ -457,7 +586,8 @@ async function handleDone() {
     pendingReminder: null,
     nextDueAt: nextDueAt.toISOString(),
     lastCompletedAt: now.toISOString(),
-    lastTickAt: now.toISOString()
+    lastTickAt: now.toISOString(),
+    completedToday
   });
 
   await clearReminderPresentation();
@@ -510,6 +640,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
     if (message?.type === "SETTINGS_UPDATED") {
       sendResponse(await rescheduleFromSettings());
+      return;
+    }
+
+    if (message?.type === "RESET_QUEUE") {
+      sendResponse(await resetQueueFromSettings());
       return;
     }
 

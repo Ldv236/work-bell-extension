@@ -176,18 +176,19 @@
             <input id="volume" type="range" min="0" max="100" step="5" />
             <div id="volumeValue" class="value">70%</div>
           </div>
-          <div class="hint">Голосовой сигнал использует эту громкость. Если голос недоступен, будет запасной короткий звук.</div>
+          <div class="hint">Первый сигнал проговаривает полную фразу, повторные сигналы произносят только название упражнения.</div>
         </div>
       </div>
 
       <div class="row">
         <label for="exercises">Список упражнений, по одному на строку</label>
         <textarea id="exercises"></textarea>
-        <div class="hint">Можно дополнять список своими вариантами. На каждом сигнале расширение выбирает одно случайное упражнение.</div>
+        <div class="hint">Внутри дня упражнения идут без повторов по очереди. Когда список заканчивается, формируется новая случайная очередь.</div>
       </div>
 
       <div class="btns">
         <button id="save">Сохранить</button>
+        <button id="resetQueue" class="secondary">Обновить очередь</button>
         <button id="testSound" class="secondary">Проверить голос</button>
         <span id="status"></span>
       </div>
@@ -197,4 +198,3 @@
   <script src="options.js"></script>
 </body>
 </html>
-

@@ -25,6 +25,7 @@ const volumeValueEl = document.getElementById("volumeValue");
 const exercisesEl = document.getElementById("exercises");
 const statusEl = document.getElementById("status");
 const saveBtn = document.getElementById("save");
+const resetQueueBtn = document.getElementById("resetQueue");
 const testSoundBtn = document.getElementById("testSound");
 
 async function load() {
@@ -63,15 +64,8 @@ function validate() {
   return "";
 }
 
-async function save() {
-  const error = validate();
-  if (error) {
-    statusEl.textContent = error;
-    statusEl.className = "error";
-    return;
-  }
-
-  const settings = {
+function collectSettings() {
+  return {
     startTime: startTimeEl.value,
     endTime: endTimeEl.value,
     intervalMinutes: Number(intervalMinutesEl.value),
@@ -79,15 +73,46 @@ async function save() {
     soundFile: "sounds/bell.wav",
     exercises: parseExercises(exercisesEl.value)
   };
+}
 
-  await chrome.storage.sync.set(settings);
+function flashStatus(text, className = "", timeoutMs = 1600) {
+  statusEl.textContent = text;
+  statusEl.className = className;
+
+  if (timeoutMs > 0) {
+    setTimeout(() => {
+      statusEl.textContent = "";
+      statusEl.className = "";
+    }, timeoutMs);
+  }
+}
+
+async function save(showMessage = true) {
+  const error = validate();
+  if (error) {
+    statusEl.textContent = error;
+    statusEl.className = "error";
+    return false;
+  }
+
+  await chrome.storage.sync.set(collectSettings());
   await chrome.runtime.sendMessage({ type: "SETTINGS_UPDATED" });
-  statusEl.textContent = "Сохранено, расписание пересчитано";
-  statusEl.className = "ok";
-  setTimeout(() => {
-    statusEl.textContent = "";
-    statusEl.className = "";
-  }, 1600);
+
+  if (showMessage) {
+    flashStatus("Сохранено, расписание пересчитано", "ok");
+  }
+
+  return true;
+}
+
+async function resetQueue() {
+  const saved = await save(false);
+  if (!saved) {
+    return;
+  }
+
+  await chrome.runtime.sendMessage({ type: "RESET_QUEUE" });
+  flashStatus("Очередь обновлена", "ok");
 }
 
 function testSound() {
@@ -95,18 +120,16 @@ function testSound() {
     type: "PLAY_PREVIEW",
     volume: Number(volumeEl.value) / 100
   });
-  statusEl.textContent = "Проверяю голосовой сигнал";
-  statusEl.className = "";
-  setTimeout(() => {
-    statusEl.textContent = "";
-    statusEl.className = "";
-  }, 1200);
+  flashStatus("Проверяю голосовой сигнал", "", 1200);
 }
 
 volumeEl.addEventListener("input", () => {
   volumeValueEl.textContent = `${volumeEl.value}%`;
 });
 
-saveBtn.addEventListener("click", save);
+saveBtn.addEventListener("click", () => {
+  save(true);
+});
+resetQueueBtn.addEventListener("click", resetQueue);
 testSoundBtn.addEventListener("click", testSound);
 load();
