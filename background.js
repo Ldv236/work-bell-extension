@@ -505,6 +505,27 @@ function computeFallbackNextDue(now, settings) {
     : computeRelativeInitialDue(now, settings);
 }
 
+function didRelativeScheduleInputsChange(previousSettings, currentSettings) {
+  if (!previousSettings || !currentSettings) {
+    return true;
+  }
+
+  return previousSettings.scheduleMode !== currentSettings.scheduleMode
+    || previousSettings.startTime !== currentSettings.startTime
+    || previousSettings.endTime !== currentSettings.endTime
+    || Number(previousSettings.intervalMinutes) !== Number(currentSettings.intervalMinutes);
+}
+
+function computeRelativeDueAfterSettingsChange(now, state, settings) {
+  const lastCompletedAt = state.lastCompletedAt ? new Date(state.lastCompletedAt) : null;
+
+  if (lastCompletedAt && !Number.isNaN(lastCompletedAt.getTime()) && isSameCalendarDay(lastCompletedAt, now)) {
+    return computeRelativeDueAfter(lastCompletedAt, settings);
+  }
+
+  return computeRelativeDueAfter(now, settings);
+}
+
 function normalizeNextDue(state, now, settings) {
   const fallback = computeFallbackNextDue(now, settings);
 
@@ -806,16 +827,30 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
 
     if (message?.type === "SETTINGS_UPDATED") {
-      const runtime = await getRuntimeState(new Date());
+      const now = new Date();
+      const runtime = await getRuntimeState(now);
       if (runtime.state.pendingReminder) {
         await refreshPendingReminderPresentation(runtime.state.pendingReminder, runtime.settings, { forceNotification: true });
-      } else {
+      } else if (runtime.settings.scheduleMode === SCHEDULE_MODE_FIXED) {
         await chrome.storage.local.set({
           nextDueAt: null,
-          lastTickAt: new Date().toISOString(),
+          lastTickAt: now.toISOString(),
           lastExercise: null
         });
         await tick();
+      } else {
+        const shouldRecalculate = didRelativeScheduleInputsChange(message.previousSettings, message.currentSettings || runtime.settings);
+
+        if (shouldRecalculate) {
+          const nextDueAt = computeRelativeDueAfterSettingsChange(now, runtime.state, runtime.settings);
+          await chrome.storage.local.set({
+            nextDueAt: nextDueAt.toISOString(),
+            lastTickAt: now.toISOString(),
+            lastExercise: null
+          });
+        } else {
+          await chrome.storage.local.set({ lastTickAt: now.toISOString() });
+        }
       }
       sendResponse({ ok: true });
       return;

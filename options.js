@@ -45,6 +45,7 @@ const statusEl = document.getElementById("status");
 const saveBtn = document.getElementById("save");
 const resetQueueBtn = document.getElementById("resetQueue");
 const testSoundBtn = document.getElementById("testSound");
+let loadedSettings = null;
 
 function autoResizeExercises() {
   exercisesEl.style.height = "auto";
@@ -125,6 +126,7 @@ async function load() {
   volumeValueEl.textContent = `${volumeEl.value}%`;
   exercisesEl.value = (settings.exercises || []).join("\n");
   autoResizeExercises();
+  loadedSettings = collectSettings();
 }
 
 function parseExercises(text) {
@@ -210,8 +212,16 @@ async function save(showMessage = true) {
     return false;
   }
 
-  await chrome.storage.sync.set(collectSettings());
-  await chrome.runtime.sendMessage({ type: "SETTINGS_UPDATED" });
+  const nextSettings = collectSettings();
+  const previousSettings = loadedSettings || nextSettings;
+
+  await chrome.storage.sync.set(nextSettings);
+  await chrome.runtime.sendMessage({
+    type: "SETTINGS_UPDATED",
+    previousSettings,
+    currentSettings: nextSettings
+  });
+  loadedSettings = nextSettings;
 
   if (showMessage) {
     flashStatus("Сохранено, расписание пересчитано", "ok");
@@ -253,5 +263,4 @@ saveBtn.addEventListener("click", () => {
 resetQueueBtn.addEventListener("click", resetQueue);
 testSoundBtn.addEventListener("click", testSound);
 load();
-
 
