@@ -3,6 +3,39 @@ const LEGACY_REMINDER_OUTRO_TEXT = "Подтвердите в приложени
 const LEGACY_BAND_EXERCISE = "упражнения с резинкой на плечевые суставы/связки";
 const BAND_EXERCISE_ROTATION = "с резинкой на плечевые суставы (ротация)";
 const BAND_EXERCISE_ABDUCTION = "с резинкой на плечевые суставы (отведения)";
+const LEGACY_DEFAULT_EXERCISES = [
+  "приседания",
+  "приседания широкие",
+  "отжимания",
+  "пинки перекрестные",
+  "пинки боковые",
+  "хлопки под бедром",
+  LEGACY_BAND_EXERCISE,
+  "скакалка",
+  "жонглирование"
+];
+const PREVIOUS_DEFAULT_EXERCISES = [
+  "приседания",
+  "приседания широкие",
+  "отжимания",
+  "пинки перекрестные",
+  "пинки боковые",
+  "хлопки под бедром",
+  BAND_EXERCISE_ROTATION,
+  BAND_EXERCISE_ABDUCTION,
+  "скакалка",
+  "жонглирование"
+];
+const DEFAULT_EXERCISES = [
+  "приседания",
+  "отжимания от стены или стола",
+  "наклоны вперед",
+  "наклоны в стороны",
+  "круговые движения плечами",
+  "махи руками",
+  "подъемы на носки",
+  "ходьба на месте"
+];
 const DEFAULTS = {
   startTime: "09:00",
   endTime: "22:00",
@@ -15,18 +48,7 @@ const DEFAULTS = {
   reminderOutroText: ". Подтвердите в приложении.",
   volume: 0.7,
   soundFile: "sounds/bell.wav",
-  exercises: [
-    "приседания",
-    "приседания широкие",
-    "отжимания",
-    "пинки перекрестные",
-    "пинки боковые",
-    "хлопки под бедром",
-    BAND_EXERCISE_ROTATION,
-    BAND_EXERCISE_ABDUCTION,
-    "скакалка",
-    "жонглирование"
-  ]
+  exercises: DEFAULT_EXERCISES
 };
 
 const startTimeEl = document.getElementById("startTime");
@@ -60,27 +82,37 @@ function autoResizeExercises() {
   exercisesEl.style.height = `${Math.ceil(nextHeight)}px`;
 }
 
+function isSameExerciseList(left, right) {
+  if (!Array.isArray(left) || !Array.isArray(right) || left.length !== right.length) {
+    return false;
+  }
+
+  return left.every((item, index) => String(item).trim() === String(right[index]).trim());
+}
+
 function migrateExercises(exercises) {
   if (!Array.isArray(exercises)) {
     return { exercises: [], changed: false };
   }
 
+  const normalized = exercises.map((item) => String(item).trim()).filter(Boolean);
+
+  if (isSameExerciseList(normalized, LEGACY_DEFAULT_EXERCISES)
+    || isSameExerciseList(normalized, PREVIOUS_DEFAULT_EXERCISES)) {
+    return { exercises: DEFAULT_EXERCISES, changed: true };
+  }
+
   const migrated = [];
   let changed = false;
 
-  for (const item of exercises) {
-    const normalized = String(item).trim();
-    if (!normalized) {
-      continue;
-    }
-
-    if (normalized === LEGACY_BAND_EXERCISE) {
+  for (const item of normalized) {
+    if (item === LEGACY_BAND_EXERCISE) {
       migrated.push(BAND_EXERCISE_ROTATION, BAND_EXERCISE_ABDUCTION);
       changed = true;
       continue;
     }
 
-    migrated.push(normalized);
+    migrated.push(item);
   }
 
   return { exercises: migrated, changed };
@@ -263,4 +295,5 @@ saveBtn.addEventListener("click", () => {
 resetQueueBtn.addEventListener("click", resetQueue);
 testSoundBtn.addEventListener("click", testSound);
 load();
+
 
