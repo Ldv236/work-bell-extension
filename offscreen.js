@@ -1,5 +1,6 @@
 ﻿const OFFSCREEN_PLAY = "OFFSCREEN_PLAY";
 const OFFSCREEN_PLAY_PREVIEW = "OFFSCREEN_PLAY_PREVIEW";
+const OFFSCREEN_STOP = "OFFSCREEN_STOP";
 const AUDIO_MODE_VOICE = "voice";
 const AUDIO_MODE_BEEP = "beep";
 let fallbackAudio = null;
@@ -109,6 +110,11 @@ if (hasSpeechSupport()) {
 }
 
 chrome.runtime.onMessage.addListener((message) => {
+  if (message?.type === OFFSCREEN_STOP) {
+    stopEverything();
+    return;
+  }
+
   if (message?.type === OFFSCREEN_PLAY || message?.type === OFFSCREEN_PLAY_PREVIEW) {
     stopEverything();
     const audioMode = message.audioMode === AUDIO_MODE_BEEP ? AUDIO_MODE_BEEP : AUDIO_MODE_VOICE;

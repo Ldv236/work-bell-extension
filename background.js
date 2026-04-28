@@ -47,6 +47,7 @@ const DEFAULTS = {
   reminderIntroText: "Пора размяться. Выполни упражнение",
   reminderOutroText: ". Подтвердите в приложении.",
   volume: 0.7,
+  soundMuted: false,
   soundFile: "sounds/bell.wav",
   exercises: DEFAULT_EXERCISES
 };
@@ -65,6 +66,7 @@ const REMINDER_WINDOW_WIDTH = 620;
 const REMINDER_WINDOW_HEIGHT = 660;
 const OFFSCREEN_PLAY = "OFFSCREEN_PLAY";
 const OFFSCREEN_PLAY_PREVIEW = "OFFSCREEN_PLAY_PREVIEW";
+const OFFSCREEN_STOP = "OFFSCREEN_STOP";
 
 function isSameExerciseList(left, right) {
   if (!Array.isArray(left) || !Array.isArray(right) || left.length !== right.length) {
@@ -143,6 +145,7 @@ async function getSettings() {
     reminderIntroText,
     reminderOutroText,
     volume: Math.max(0, Math.min(1, Number(raw.volume ?? DEFAULTS.volume))),
+    soundMuted: Boolean(raw.soundMuted),
     soundFile: DEFAULTS.soundFile,
     exercises
   };
@@ -335,7 +338,7 @@ async function normalizeDayState(rawState, settings, now = new Date(), options =
     hasChanges = true;
   }
 
-  if (options.resetQueue || queueRemaining.length === 0) {
+  if (options.resetQueue || (!options.preserveEmptyQueue && queueRemaining.length === 0)) {
     queueRemaining = buildExerciseQueue(settings.exercises, settings.queueOrderMode);
     hasChanges = true;
   }
@@ -400,6 +403,10 @@ async function sendOffscreenMessage(message) {
 }
 
 async function playSignal(text, settings, volumeOverride) {
+  if (settings.soundMuted) {
+    return;
+  }
+
   await sendOffscreenMessage({
     type: OFFSCREEN_PLAY,
     text,
@@ -407,6 +414,19 @@ async function playSignal(text, settings, volumeOverride) {
     soundFile: settings.soundFile,
     volume: Math.max(0, Math.min(1, Number(volumeOverride ?? settings.volume)))
   });
+}
+
+async function stopOffscreenSignal() {
+  try {
+    const hasDocument = await chrome.offscreen.hasDocument();
+    if (!hasDocument) {
+      return;
+    }
+
+    await chrome.runtime.sendMessage({ type: OFFSCREEN_STOP });
+  } catch (error) {
+    console.warn("Offscreen stop error:", error);
+  }
 }
 
 async function playReminderIntro(settings, reminder) {
@@ -611,6 +631,21 @@ function buildTodaySummary(completedToday) {
     .sort((left, right) => right.count - left.count || left.exercise.localeCompare(right.exercise, "ru"));
 }
 
+function restoreExerciseToQueue(exercise, queueRemaining, settings) {
+  const normalizedExercise = String(exercise || "").trim();
+  const sanitizedQueue = sanitizeQueue(queueRemaining, settings.exercises);
+
+  if (!normalizedExercise || !settings.exercises.includes(normalizedExercise)) {
+    return sanitizedQueue;
+  }
+
+  if (sanitizedQueue[0] === normalizedExercise) {
+    return sanitizedQueue;
+  }
+
+  return [normalizedExercise, ...sanitizedQueue];
+}
+
 async function refreshPendingReminderPresentation(pendingReminder, settings, options = {}) {
   await setBadgePending(true);
   const notificationVisible = await hasVisibleReminderNotification();
@@ -740,13 +775,19 @@ async function triggerReminder(now, settings, state) {
   await playReminderIntro(settings, reminder);
 }
 
-async function resolveReminder(countExercise) {
+async function resolveReminder(countExercise, options = {}) {
   const now = new Date();
   const settings = await getSettings();
   const rawState = await getState();
-  const state = await normalizeDayState(rawState, settings, now);
+  const deferExercise = Boolean(options.deferExercise);
+  const state = await normalizeDayState(rawState, settings, now, {
+    preserveEmptyQueue: deferExercise
+  });
   const completedExercise = state.pendingReminder?.exercise || state.lastExercise || null;
   const completedToday = [...state.completedToday];
+  const queueRemaining = deferExercise
+    ? restoreExerciseToQueue(completedExercise, state.queueRemaining, settings)
+    : state.queueRemaining;
 
   if (countExercise && completedExercise) {
     completedToday.push({
@@ -761,7 +802,9 @@ async function resolveReminder(countExercise) {
       nextDueAt: null,
       lastCompletedAt: now.toISOString(),
       lastTickAt: now.toISOString(),
-      completedToday
+      completedToday,
+      queueRemaining,
+      queueDayKey: todayKey(now)
     });
     await clearReminderPresentation();
     return { ok: true, nextDueAt: null };
@@ -776,7 +819,9 @@ async function resolveReminder(countExercise) {
     nextDueAt: nextDueAt.toISOString(),
     lastCompletedAt: now.toISOString(),
     lastTickAt: now.toISOString(),
-    completedToday
+    completedToday,
+    queueRemaining,
+    queueDayKey: todayKey(now)
   });
 
   await clearReminderPresentation();
@@ -851,10 +896,25 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       return;
     }
 
+    if (message?.type === "MARK_DEFERRED") {
+      sendResponse(await resolveReminder(false, { deferExercise: true }));
+      return;
+    }
+
     if (message?.type === "PLAY_PREVIEW") {
       const settings = await getSettings();
       await playPreview(settings, message.volume, message.reminderIntroText, message.reminderOutroText, message.audioMode);
       sendResponse({ ok: true });
+      return;
+    }
+
+    if (message?.type === "SET_SOUND_MUTED") {
+      const soundMuted = Boolean(message.soundMuted);
+      await chrome.storage.sync.set({ soundMuted });
+      if (soundMuted) {
+        await stopOffscreenSignal();
+      }
+      sendResponse({ ok: true, soundMuted });
       return;
     }
 
@@ -970,5 +1030,3 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
     await handleRepeatAlarm();
   }
 });
-
-

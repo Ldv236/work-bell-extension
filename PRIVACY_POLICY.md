@@ -8,7 +8,7 @@ Work Bell: Breaks and Exercises does not collect, transmit, sell, or share perso
 
 The extension stores the following data in Chrome extension storage:
 
-- user settings, such as active hours, reminder interval, repeat interval, signal type, voice phrase settings, volume, queue mode, and exercise list;
+- user settings, such as active hours, reminder interval, repeat interval, signal type, voice phrase settings, volume, quick sound mute preference, queue mode, and exercise list;
 - local runtime state required for reminder scheduling, such as the next reminder time, the active reminder state, the daily queue, and today's completed exercises.
 
 ## Where data is stored

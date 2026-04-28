@@ -5,8 +5,11 @@ const exerciseEl = document.getElementById("exercise");
 const nextEl = document.getElementById("next");
 const doneBtn = document.getElementById("doneBtn");
 const skipBtn = document.getElementById("skipBtn");
+const deferBtn = document.getElementById("deferBtn");
+const mainControlsEl = document.getElementById("mainControls");
 const todayBtn = document.getElementById("todayBtn");
 const todayHistoryEl = document.getElementById("todayHistory");
+const muteBtn = document.getElementById("muteBtn");
 const openOptionsBtn = document.getElementById("openOptionsBtn");
 const tipEl = document.getElementById("tip");
 const isReminderMode = new URLSearchParams(window.location.search).get("mode") === "reminder";
@@ -15,7 +18,7 @@ let todayOpen = false;
 
 if (isReminderMode) {
   document.body.classList.add("reminder");
-  todayBtn.hidden = true;
+  mainControlsEl.hidden = true;
   openOptionsBtn.hidden = true;
   todayHistoryEl.classList.add("hidden");
 }
@@ -42,6 +45,7 @@ function formatMinutes(value) {
 
 function setActionState(hasActiveReminder, isBusy) {
   doneBtn.disabled = !hasActiveReminder || isBusy;
+  deferBtn.disabled = !hasActiveReminder || isBusy;
   skipBtn.disabled = !hasActiveReminder || isBusy;
 }
 
@@ -51,6 +55,20 @@ function setAlertMode() {
 
 function setNormalMode() {
   statusEl.className = "line";
+}
+
+function setMuteButtonState(settings, isBusy = false) {
+  if (isReminderMode) {
+    return;
+  }
+
+  const hasSettings = Boolean(settings);
+  const soundMuted = Boolean(settings?.soundMuted);
+  muteBtn.disabled = !hasSettings || isBusy;
+  muteBtn.textContent = soundMuted ? "Звук выключен" : "Звук включен";
+  muteBtn.title = soundMuted ? "Включить звук напоминаний" : "Выключить звук напоминаний";
+  muteBtn.setAttribute("aria-pressed", soundMuted ? "true" : "false");
+  muteBtn.classList.toggle("sound-muted", soundMuted);
 }
 
 function renderTodayHistory(state) {
@@ -97,6 +115,7 @@ function refresh() {
     if (!response) {
       setNormalMode();
       setActionState(false, false);
+      setMuteButtonState(null);
       statusEl.textContent = "Статус недоступен";
       exerciseEl.textContent = "";
       nextEl.textContent = "";
@@ -107,6 +126,7 @@ function refresh() {
     if (response.validationError === "INVALID_WINDOW") {
       setAlertMode();
       setActionState(false, false);
+      setMuteButtonState(response.settings);
       statusEl.textContent = 'Проверьте настройки: время "с" должно быть раньше времени "по".';
       exerciseEl.textContent = "";
       nextEl.textContent = "";
@@ -117,6 +137,7 @@ function refresh() {
     const { state, settings } = response;
     const pendingReminder = state.pendingReminder;
     const hasActiveReminder = Boolean(state.hasActiveReminder && pendingReminder?.exercise);
+    setMuteButtonState(settings);
 
     if (hasActiveReminder) {
       setAlertMode();
@@ -159,6 +180,10 @@ skipBtn.addEventListener("click", () => {
   resolveReminder("MARK_SKIPPED");
 });
 
+deferBtn.addEventListener("click", () => {
+  resolveReminder("MARK_DEFERRED");
+});
+
 todayBtn.addEventListener("click", () => {
   todayOpen = !todayOpen;
   todayBtn.textContent = todayOpen ? "Скрыть сегодня" : "Сегодня";
@@ -167,6 +192,19 @@ todayBtn.addEventListener("click", () => {
 
 openOptionsBtn.addEventListener("click", () => {
   chrome.runtime.openOptionsPage();
+});
+
+muteBtn.addEventListener("click", () => {
+  const soundMuted = muteBtn.getAttribute("aria-pressed") !== "true";
+  setMuteButtonState({ soundMuted }, true);
+  chrome.runtime.sendMessage({ type: "SET_SOUND_MUTED", soundMuted }, (response) => {
+    if (response?.ok) {
+      setMuteButtonState({ soundMuted: response.soundMuted });
+      return;
+    }
+
+    refresh();
+  });
 });
 
 refresh();

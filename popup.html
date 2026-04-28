@@ -182,12 +182,27 @@
       gap: 6px;
     }
 
+    .actions {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 6px;
+    }
+
+    button.sound-muted {
+      background: #4a4038;
+      color: #ffffff;
+    }
+
     body.reminder .btns {
       gap: 10px;
       margin-top: 0;
     }
 
     body.reminder .pair {
+      gap: 10px;
+    }
+
+    body.reminder .actions {
       gap: 10px;
     }
 
@@ -236,14 +251,18 @@
         <div id="next" class="line muted"></div>
         <div id="todayHistory" class="today-box hidden"></div>
         <div class="btns">
-          <div class="pair">
+          <div class="actions">
             <button id="doneBtn" disabled>Сделано</button>
+            <button id="deferBtn" class="secondary" disabled>Отложить</button>
             <button id="skipBtn" class="secondary" disabled>Пропущу</button>
           </div>
-          <button id="todayBtn" class="secondary">Сегодня</button>
+          <div id="mainControls" class="pair">
+            <button id="todayBtn" class="secondary">Сегодня</button>
+            <button id="muteBtn" class="secondary" aria-pressed="false">Звук включен</button>
+          </div>
           <button id="openOptionsBtn" class="secondary">Настройки</button>
         </div>
-        <div id="tip" class="tip">"Сделано" учитывает упражнение в статистике за день. "Пропущу" закрывает текущее напоминание без учета.</div>
+        <div id="tip" class="tip">"Сделано" учитывает упражнение в статистике за день. "Отложить" вернет это же упражнение в следующий сигнал. "Пропущу" закрывает текущее напоминание без учета.</div>
       </div>
     </div>
   </div>
