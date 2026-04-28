@@ -67,6 +67,10 @@ const statusEl = document.getElementById("status");
 const saveBtn = document.getElementById("save");
 const resetQueueBtn = document.getElementById("resetQueue");
 const testSoundBtn = document.getElementById("testSound");
+const testReminderBtn = document.getElementById("testReminder");
+const exportDataBtn = document.getElementById("exportData");
+const importDataBtn = document.getElementById("importData");
+const importFileEl = document.getElementById("importFile");
 let loadedSettings = null;
 
 function autoResizeExercises() {
@@ -283,6 +287,72 @@ function testSound() {
   flashStatus("Проверяю сигнал", "", 1200);
 }
 
+function testReminder() {
+  chrome.runtime.sendMessage({ type: "TRIGGER_TEST_REMINDER" }, (response) => {
+    if (response?.ok) {
+      flashStatus("Тестовое напоминание создано", "ok");
+      return;
+    }
+
+    const reasonText = {
+      ACTIVE_REMINDER: "Сначала закройте активное напоминание.",
+      INVALID_WINDOW: 'Проверьте настройки: время "с" должно быть раньше времени "по".',
+      PAUSED: "Сначала снимите режим \"Не беспокоить\"."
+    };
+    flashStatus(reasonText[response?.reason] || "Не удалось создать тестовое напоминание", "error", 2600);
+  });
+}
+
+function exportData() {
+  chrome.runtime.sendMessage({ type: "EXPORT_DATA" }, (response) => {
+    if (!response?.ok || !response.data) {
+      flashStatus("Не удалось подготовить экспорт", "error", 2400);
+      return;
+    }
+
+    const json = JSON.stringify(response.data, null, 2);
+    const blob = new Blob([json], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    const date = new Date().toISOString().slice(0, 10);
+    link.href = url;
+    link.download = `work-bell-export-${date}.json`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+    flashStatus("Экспорт подготовлен", "ok");
+  });
+}
+
+function importDataFromFile(file) {
+  if (!file) {
+    return;
+  }
+
+  const reader = new FileReader();
+  reader.onload = () => {
+    try {
+      const data = JSON.parse(String(reader.result || ""));
+      chrome.runtime.sendMessage({ type: "IMPORT_DATA", data }, async (response) => {
+        if (!response?.ok) {
+          flashStatus("Не удалось импортировать JSON", "error", 2600);
+          return;
+        }
+
+        await load();
+        flashStatus("Импортировано, расписание пересчитано", "ok", 2200);
+      });
+    } catch (error) {
+      flashStatus("Файл не похож на корректный JSON", "error", 2600);
+    }
+  };
+  reader.onerror = () => {
+    flashStatus("Не удалось прочитать файл", "error", 2600);
+  };
+  reader.readAsText(file);
+}
+
 volumeEl.addEventListener("input", () => {
   volumeValueEl.textContent = `${volumeEl.value}%`;
 });
@@ -294,6 +364,13 @@ saveBtn.addEventListener("click", () => {
 });
 resetQueueBtn.addEventListener("click", resetQueue);
 testSoundBtn.addEventListener("click", testSound);
+testReminderBtn.addEventListener("click", testReminder);
+exportDataBtn.addEventListener("click", exportData);
+importDataBtn.addEventListener("click", () => {
+  importFileEl.click();
+});
+importFileEl.addEventListener("change", () => {
+  importDataFromFile(importFileEl.files?.[0]);
+  importFileEl.value = "";
+});
 load();
-
-

@@ -10,9 +10,11 @@ const mainControlsEl = document.getElementById("mainControls");
 const todayBtn = document.getElementById("todayBtn");
 const todayHistoryEl = document.getElementById("todayHistory");
 const muteBtn = document.getElementById("muteBtn");
+const pauseBtn = document.getElementById("pauseBtn");
 const openOptionsBtn = document.getElementById("openOptionsBtn");
 const tipEl = document.getElementById("tip");
 const isReminderMode = new URLSearchParams(window.location.search).get("mode") === "reminder";
+const PAUSE_MINUTES = 30;
 let refreshTimer = null;
 let todayOpen = false;
 
@@ -43,6 +45,22 @@ function formatMinutes(value) {
   return minutes === 1 ? "1 минуту" : `${minutes} мин.`;
 }
 
+function todayKey(now = new Date()) {
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function formatEntryTime(isoString) {
+  const date = new Date(isoString);
+  if (Number.isNaN(date.getTime())) {
+    return "--:--";
+  }
+
+  return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+
 function setActionState(hasActiveReminder, isBusy) {
   doneBtn.disabled = !hasActiveReminder || isBusy;
   deferBtn.disabled = !hasActiveReminder || isBusy;
@@ -71,6 +89,16 @@ function setMuteButtonState(settings, isBusy = false) {
   muteBtn.classList.toggle("sound-muted", soundMuted);
 }
 
+function setPauseButtonState(state, isBusy = false) {
+  const hasState = Boolean(state);
+  const isPaused = Boolean(state?.isPaused);
+  pauseBtn.disabled = !hasState || isBusy;
+  pauseBtn.textContent = isPaused ? "Снять паузу" : `Не беспокоить ${PAUSE_MINUTES} мин`;
+  pauseBtn.title = isPaused ? "Снова включить напоминания" : `Не показывать напоминания ${PAUSE_MINUTES} минут`;
+  pauseBtn.setAttribute("aria-pressed", isPaused ? "true" : "false");
+  pauseBtn.classList.toggle("pause-active", isPaused);
+}
+
 function renderTodayHistory(state) {
   if (isReminderMode || !todayOpen) {
     todayHistoryEl.classList.add("hidden");
@@ -78,17 +106,39 @@ function renderTodayHistory(state) {
   }
 
   const total = Array.isArray(state.completedToday) ? state.completedToday.length : 0;
-  const summary = Array.isArray(state.todaySummary) ? state.todaySummary : [];
+  const entries = Array.isArray(state.completedToday) ? state.completedToday : [];
+  const historySummary = Array.isArray(state.historySummary) ? state.historySummary : [];
+  const currentDayKey = todayKey();
+  const currentDay = historySummary.find((item) => item.dayKey === currentDayKey);
+  const otherDays = historySummary.filter((item) => item.dayKey !== currentDayKey);
+  const lines = [];
 
   if (total === 0) {
-    todayHistoryEl.textContent = "Сегодня пока ничего не выполнено.";
-    todayHistoryEl.classList.remove("hidden");
-    return;
+    lines.push("Сегодня пока ничего не выполнено.");
+  } else {
+    lines.push(`Сегодня выполнено: ${total}`);
+    for (const entry of entries) {
+      lines.push(`${formatEntryTime(entry.completedAt)} - ${entry.exercise}`);
+    }
   }
 
-  const lines = [`Сегодня выполнено: ${total}`];
-  for (const item of summary) {
-    lines.push(`${item.exercise} - ${item.count}`);
+  if (currentDay?.summary?.length) {
+    lines.push("");
+    lines.push("Итоги сегодня:");
+    for (const item of currentDay.summary) {
+      lines.push(`${item.exercise} - ${item.count}`);
+    }
+  }
+
+  if (otherDays.length > 0) {
+    lines.push("");
+    lines.push("История по дням:");
+    for (const day of otherDays) {
+      const details = Array.isArray(day.summary)
+        ? day.summary.map((item) => `${item.exercise}: ${item.count}`).join("; ")
+        : "";
+      lines.push(details ? `${day.dayKey} - ${day.total} (${details})` : `${day.dayKey} - ${day.total}`);
+    }
   }
 
   todayHistoryEl.textContent = lines.join("\n");
@@ -116,6 +166,7 @@ function refresh() {
       setNormalMode();
       setActionState(false, false);
       setMuteButtonState(null);
+      setPauseButtonState(null);
       statusEl.textContent = "Статус недоступен";
       exerciseEl.textContent = "";
       nextEl.textContent = "";
@@ -127,6 +178,7 @@ function refresh() {
       setAlertMode();
       setActionState(false, false);
       setMuteButtonState(response.settings);
+      setPauseButtonState(response.state);
       statusEl.textContent = 'Проверьте настройки: время "с" должно быть раньше времени "по".';
       exerciseEl.textContent = "";
       nextEl.textContent = "";
@@ -138,15 +190,30 @@ function refresh() {
     const pendingReminder = state.pendingReminder;
     const hasActiveReminder = Boolean(state.hasActiveReminder && pendingReminder?.exercise);
     setMuteButtonState(settings);
+    setPauseButtonState(state);
+
+    if (state.isPaused) {
+      setNormalMode();
+      setActionState(false, false);
+      statusEl.textContent = "Не беспокоить включен";
+      exerciseEl.textContent = state.nextExercise ? `Следующее упражнение после паузы: ${state.nextExercise}` : "";
+      nextEl.textContent = `Пауза до: ${formatTime(state.pausedUntil)}`;
+      renderTodayHistory(state);
+      return;
+    }
 
     if (hasActiveReminder) {
       setAlertMode();
       setActionState(true, false);
-      statusEl.textContent = isReminderMode ? "Сейчас сделать" : "Сейчас нужно сделать упражнение";
+      statusEl.textContent = pendingReminder.test
+        ? "Тестовое напоминание"
+        : (isReminderMode ? "Сейчас сделать" : "Сейчас нужно сделать упражнение");
       exerciseEl.textContent = isReminderMode ? pendingReminder.exercise : `Упражнение: ${pendingReminder.exercise}`;
-      nextEl.textContent = isReminderMode
-        ? `Повтор сигнала: каждые ${formatMinutes(settings.repeatReminderMinutes)}`
-        : `Активный сигнал. Повтор каждые ${formatMinutes(settings.repeatReminderMinutes)}`;
+      nextEl.textContent = pendingReminder.test
+        ? "Это тест: очередь и история не изменятся"
+        : (isReminderMode
+          ? `Повтор сигнала: каждые ${formatMinutes(settings.repeatReminderMinutes)}`
+          : `Активный сигнал. Повтор каждые ${formatMinutes(settings.repeatReminderMinutes)}`);
       renderTodayHistory(state);
       return;
     }
@@ -154,8 +221,10 @@ function refresh() {
     setNormalMode();
     setActionState(false, false);
     statusEl.textContent = "Ожидание следующего сигнала";
-    exerciseEl.textContent = "";
-    nextEl.textContent = `Следующий сигнал: ${formatTime(state.nextDueAt)}`;
+    exerciseEl.textContent = state.isDeferredNext
+      ? `Отложено: ${state.nextExercise} повторится следующим`
+      : (state.nextExercise ? `Следующее упражнение: ${state.nextExercise}` : "");
+    nextEl.textContent = `${settings.soundMuted ? "Звук выключен. " : ""}Следующий сигнал: ${formatTime(state.nextDueAt)}`;
     renderTodayHistory(state);
   });
 }
@@ -186,7 +255,7 @@ deferBtn.addEventListener("click", () => {
 
 todayBtn.addEventListener("click", () => {
   todayOpen = !todayOpen;
-  todayBtn.textContent = todayOpen ? "Скрыть сегодня" : "Сегодня";
+  todayBtn.textContent = todayOpen ? "Скрыть историю" : "История";
   refresh();
 });
 
@@ -205,6 +274,22 @@ muteBtn.addEventListener("click", () => {
 
     refresh();
   });
+});
+
+pauseBtn.addEventListener("click", () => {
+  const isPaused = pauseBtn.getAttribute("aria-pressed") === "true";
+  setPauseButtonState({ isPaused: !isPaused }, true);
+  chrome.runtime.sendMessage(
+    isPaused ? { type: "CLEAR_PAUSE" } : { type: "SET_PAUSE", minutes: PAUSE_MINUTES },
+    () => {
+      if (isReminderMode) {
+        window.close();
+        return;
+      }
+
+      refresh();
+    }
+  );
 });
 
 refresh();

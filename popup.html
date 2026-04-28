@@ -153,6 +153,8 @@
       background: #fffaf2;
       font-size: 12px;
       line-height: 1.4;
+      max-height: 220px;
+      overflow: auto;
       white-space: pre-line;
     }
 
@@ -190,6 +192,11 @@
 
     button.sound-muted {
       background: #4a4038;
+      color: #ffffff;
+    }
+
+    button.pause-active {
+      background: #7a3517;
       color: #ffffff;
     }
 
@@ -257,9 +264,10 @@
             <button id="skipBtn" class="secondary" disabled>Пропущу</button>
           </div>
           <div id="mainControls" class="pair">
-            <button id="todayBtn" class="secondary">Сегодня</button>
+            <button id="todayBtn" class="secondary">История</button>
             <button id="muteBtn" class="secondary" aria-pressed="false">Звук включен</button>
           </div>
+          <button id="pauseBtn" class="secondary">Не беспокоить 30 мин</button>
           <button id="openOptionsBtn" class="secondary">Настройки</button>
         </div>
         <div id="tip" class="tip">"Сделано" учитывает упражнение в статистике за день. "Отложить" вернет это же упражнение в следующий сигнал. "Пропущу" закрывает текущее напоминание без учета.</div>

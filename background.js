@@ -67,6 +67,7 @@ const REMINDER_WINDOW_HEIGHT = 660;
 const OFFSCREEN_PLAY = "OFFSCREEN_PLAY";
 const OFFSCREEN_PLAY_PREVIEW = "OFFSCREEN_PLAY_PREVIEW";
 const OFFSCREEN_STOP = "OFFSCREEN_STOP";
+const EXPORT_VERSION = 1;
 
 function isSameExerciseList(left, right) {
   if (!Array.isArray(left) || !Array.isArray(right) || left.length !== right.length) {
@@ -159,10 +160,17 @@ async function getState() {
     lastExercise: null,
     lastTickAt: null,
     reminderWindowId: null,
+    pausedUntil: null,
+    deferredExercise: null,
     queueDayKey: null,
     queueRemaining: [],
-    completedToday: []
+    completedToday: [],
+    historyByDay: {}
   });
+}
+
+function isValidHHMM(value) {
+  return /^\d{2}:\d{2}$/.test(String(value || ""));
 }
 
 function parseHHMM(hhmm) {
@@ -311,6 +319,19 @@ function sanitizeCompletedToday(entries) {
     .filter((entry) => entry.exercise);
 }
 
+function sanitizeHistoryByDay(historyByDay) {
+  if (!historyByDay || typeof historyByDay !== "object" || Array.isArray(historyByDay)) {
+    return {};
+  }
+
+  return Object.fromEntries(
+    Object.entries(historyByDay)
+      .filter(([dayKey]) => /^\d{4}-\d{2}-\d{2}$/.test(dayKey))
+      .map(([dayKey, entries]) => [dayKey, sanitizeCompletedToday(entries)])
+      .filter(([, entries]) => entries.length > 0)
+  );
+}
+
 function shuffleExercises(exercises) {
   const pool = [...exercises];
   for (let index = pool.length - 1; index > 0; index -= 1) {
@@ -329,12 +350,21 @@ async function normalizeDayState(rawState, settings, now = new Date(), options =
   let queueDayKey = rawState.queueDayKey;
   let queueRemaining = sanitizeQueue(rawState.queueRemaining, settings.exercises);
   let completedToday = sanitizeCompletedToday(rawState.completedToday);
+  let historyByDay = sanitizeHistoryByDay(rawState.historyByDay);
   let hasChanges = false;
 
   if (queueDayKey !== currentDayKey) {
     queueDayKey = currentDayKey;
     queueRemaining = [];
-    completedToday = [];
+    completedToday = historyByDay[currentDayKey] || [];
+    hasChanges = true;
+  }
+
+  if (completedToday.length > 0 && !historyByDay[currentDayKey]) {
+    historyByDay = {
+      ...historyByDay,
+      [currentDayKey]: completedToday
+    };
     hasChanges = true;
   }
 
@@ -347,7 +377,8 @@ async function normalizeDayState(rawState, settings, now = new Date(), options =
     await chrome.storage.local.set({
       queueDayKey,
       queueRemaining,
-      completedToday
+      completedToday,
+      historyByDay
     });
   }
 
@@ -355,7 +386,8 @@ async function normalizeDayState(rawState, settings, now = new Date(), options =
     ...rawState,
     queueDayKey,
     queueRemaining,
-    completedToday
+    completedToday,
+    historyByDay
   };
 }
 
@@ -484,12 +516,15 @@ async function setBadgePending(isPending) {
 }
 
 async function showReminderNotification(reminder) {
+  const isTest = Boolean(reminder.test);
   await chrome.notifications.create(NOTIFICATION_ID, {
     type: "basic",
     iconUrl: "icons/128.png",
-    title: "Пора встать от компьютера",
+    title: isTest ? "Тестовое напоминание Work Bell" : "Пора встать от компьютера",
     message: `Сейчас сделать: ${reminder.exercise}`,
-    contextMessage: "Сигнал будет повторяться, пока вы не нажмете \"Сделано\" или \"Пропущу\".",
+    contextMessage: isTest
+      ? "Это тест: очередь и история не изменятся."
+      : "Откройте окно, чтобы отложить или включить паузу.",
     buttons: [
       { title: "Сделано" },
       { title: "Пропущу" }
@@ -631,6 +666,50 @@ function buildTodaySummary(completedToday) {
     .sort((left, right) => right.count - left.count || left.exercise.localeCompare(right.exercise, "ru"));
 }
 
+function buildHistorySummary(historyByDay) {
+  return Object.entries(sanitizeHistoryByDay(historyByDay))
+    .map(([dayKey, entries]) => ({
+      dayKey,
+      total: entries.length,
+      summary: buildTodaySummary(entries)
+    }))
+    .sort((left, right) => right.dayKey.localeCompare(left.dayKey));
+}
+
+function getNextExercisePreview(state, settings) {
+  const queueRemaining = sanitizeQueue(state.queueRemaining, settings.exercises);
+  return queueRemaining[0] || settings.exercises[0] || "";
+}
+
+function parseIsoDate(value) {
+  if (!value) {
+    return null;
+  }
+
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function isPauseActive(pausedUntil, now) {
+  const pauseDate = parseIsoDate(pausedUntil);
+  return Boolean(pauseDate && pauseDate > now);
+}
+
+function buildStatusState(state, settings, extras = {}) {
+  const nextExercise = extras.nextExercise ?? getNextExercisePreview(state, settings);
+  const deferredExercise = String(state.deferredExercise || "").trim();
+
+  return {
+    ...state,
+    ...extras,
+    nextExercise,
+    deferredExercise,
+    isDeferredNext: Boolean(deferredExercise && deferredExercise === nextExercise),
+    todaySummary: buildTodaySummary(state.completedToday),
+    historySummary: buildHistorySummary(state.historyByDay)
+  };
+}
+
 function restoreExerciseToQueue(exercise, queueRemaining, settings) {
   const normalizedExercise = String(exercise || "").trim();
   const sanitizedQueue = sanitizeQueue(queueRemaining, settings.exercises);
@@ -687,15 +766,44 @@ async function getRuntimeState(now = new Date()) {
     return {
       settings,
       state: {
-        ...stateWithDay,
-        nextDueAt: null,
-        pendingReminder: null,
-        lastTickAt: now.toISOString(),
-        hasActiveReminder: false,
-        todaySummary: buildTodaySummary(stateWithDay.completedToday)
+        ...buildStatusState(stateWithDay, settings, {
+          nextDueAt: null,
+          pendingReminder: null,
+          lastTickAt: now.toISOString(),
+          hasActiveReminder: false,
+          isPaused: false
+        })
       },
       validationError: "INVALID_WINDOW"
     };
+  }
+
+  if (isPauseActive(stateWithDay.pausedUntil, now)) {
+    await chrome.storage.local.set({
+      pendingReminder: null,
+      lastTickAt: now.toISOString()
+    });
+
+    if (pendingReminder) {
+      await clearReminderPresentation();
+      pendingReminder = null;
+    }
+
+    return {
+      settings,
+      state: buildStatusState(stateWithDay, settings, {
+        pendingReminder: null,
+        lastTickAt: now.toISOString(),
+        hasActiveReminder: false,
+        isPaused: true,
+        pausedUntil: stateWithDay.pausedUntil
+      })
+    };
+  }
+
+  if (stateWithDay.pausedUntil) {
+    stateWithDay.pausedUntil = null;
+    await chrome.storage.local.set({ pausedUntil: null });
   }
 
   const notificationVisible = await hasVisibleReminderNotification();
@@ -720,25 +828,23 @@ async function getRuntimeState(now = new Date()) {
 
     return {
       settings,
-      state: {
-        ...stateWithDay,
+      state: buildStatusState(stateWithDay, settings, {
         pendingReminder,
         lastExercise: pendingReminder.exercise,
         lastTickAt: now.toISOString(),
         hasActiveReminder: true,
-        todaySummary: buildTodaySummary(stateWithDay.completedToday)
-      }
+        isPaused: false
+      })
     };
   }
 
-  const normalizedState = {
-    ...stateWithDay,
+  const normalizedState = buildStatusState(stateWithDay, settings, {
     pendingReminder: null,
     nextDueAt: normalizeNextDue(stateWithDay, now, settings).toISOString(),
     lastTickAt: now.toISOString(),
     hasActiveReminder: false,
-    todaySummary: buildTodaySummary(stateWithDay.completedToday)
-  };
+    isPaused: false
+  });
 
   await chrome.storage.local.set({
     nextDueAt: normalizedState.nextDueAt,
@@ -762,6 +868,7 @@ async function triggerReminder(now, settings, state) {
   await chrome.storage.local.set({
     pendingReminder: reminder,
     nextDueAt: null,
+    deferredExercise: null,
     lastExercise: reminder.exercise,
     lastTickAt: now.toISOString(),
     queueRemaining: nextQueue,
@@ -785,15 +892,35 @@ async function resolveReminder(countExercise, options = {}) {
   });
   const completedExercise = state.pendingReminder?.exercise || state.lastExercise || null;
   const completedToday = [...state.completedToday];
+  const historyByDay = sanitizeHistoryByDay(state.historyByDay);
+  const isTestReminder = Boolean(state.pendingReminder?.test);
   const queueRemaining = deferExercise
     ? restoreExerciseToQueue(completedExercise, state.queueRemaining, settings)
     : state.queueRemaining;
+  const deferredExercise = deferExercise && !isTestReminder ? completedExercise : null;
 
-  if (countExercise && completedExercise) {
-    completedToday.push({
+  if (countExercise && completedExercise && !isTestReminder) {
+    const historyEntry = {
       exercise: completedExercise,
       completedAt: now.toISOString()
+    };
+    completedToday.push(historyEntry);
+    historyByDay[todayKey(now)] = completedToday;
+  }
+
+  if (isTestReminder) {
+    const nextDueAt = state.pendingReminder?.previousNextDueAt || state.nextDueAt || null;
+
+    await chrome.storage.local.set({
+      pendingReminder: null,
+      nextDueAt,
+      lastTickAt: now.toISOString(),
+      completedToday,
+      historyByDay,
+      deferredExercise: null
     });
+    await clearReminderPresentation();
+    return { ok: true, nextDueAt, test: true };
   }
 
   if (!isValidWindow(settings, now)) {
@@ -803,8 +930,10 @@ async function resolveReminder(countExercise, options = {}) {
       lastCompletedAt: now.toISOString(),
       lastTickAt: now.toISOString(),
       completedToday,
+      historyByDay,
       queueRemaining,
-      queueDayKey: todayKey(now)
+      queueDayKey: todayKey(now),
+      deferredExercise
     });
     await clearReminderPresentation();
     return { ok: true, nextDueAt: null };
@@ -820,8 +949,10 @@ async function resolveReminder(countExercise, options = {}) {
     lastCompletedAt: now.toISOString(),
     lastTickAt: now.toISOString(),
     completedToday,
+    historyByDay,
     queueRemaining,
-    queueDayKey: todayKey(now)
+    queueDayKey: todayKey(now),
+    deferredExercise
   });
 
   await clearReminderPresentation();
@@ -847,6 +978,173 @@ async function handleRepeatAlarm() {
   await showReminderNotification(state.pendingReminder);
   await openReminderWindow();
   await playReminderRepeat(settings, state.pendingReminder);
+}
+
+async function setPauseFor(minutes) {
+  const now = new Date();
+  const settings = await getSettings();
+  const rawState = await getState();
+  const state = await normalizeDayState(rawState, settings, now, { preserveEmptyQueue: true });
+  const pauseMinutes = Math.max(1, Math.min(24 * 60, Number(minutes || 30)));
+  const pausedUntil = new Date(now.getTime() + pauseMinutes * 60000).toISOString();
+  const activeExercise = state.pendingReminder?.exercise || null;
+  const queueRemaining = activeExercise
+    ? restoreExerciseToQueue(activeExercise, state.queueRemaining, settings)
+    : state.queueRemaining;
+
+  await chrome.storage.local.set({
+    pausedUntil,
+    pendingReminder: null,
+    nextDueAt: pausedUntil,
+    lastTickAt: now.toISOString(),
+    queueRemaining,
+    queueDayKey: todayKey(now),
+    deferredExercise: activeExercise || state.deferredExercise || null
+  });
+  await clearReminderPresentation();
+
+  return { ok: true, pausedUntil };
+}
+
+async function clearPause() {
+  await chrome.storage.local.set({ pausedUntil: null });
+  await tick();
+  return { ok: true };
+}
+
+async function triggerTestReminder() {
+  const now = new Date();
+  const runtime = await getRuntimeState(now);
+
+  if (runtime.validationError === "INVALID_WINDOW") {
+    return { ok: false, reason: "INVALID_WINDOW" };
+  }
+
+  if (runtime.state.isPaused) {
+    return { ok: false, reason: "PAUSED" };
+  }
+
+  if (runtime.state.pendingReminder) {
+    return { ok: false, reason: "ACTIVE_REMINDER" };
+  }
+
+  const { settings, state } = runtime;
+  const exercise = state.nextExercise || settings.exercises[0];
+  const reminder = {
+    exercise,
+    dueAt: now.toISOString(),
+    startedAt: now.toISOString(),
+    previousNextDueAt: state.nextDueAt || null,
+    test: true
+  };
+
+  await chrome.storage.local.set({
+    pendingReminder: reminder,
+    lastExercise: reminder.exercise,
+    lastTickAt: now.toISOString()
+  });
+
+  await setBadgePending(true);
+  await showReminderNotification(reminder);
+  await openReminderWindow();
+  await scheduleRepeatAlarm(settings.repeatReminderMinutes);
+  await playReminderIntro(settings, reminder);
+
+  return { ok: true };
+}
+
+function sanitizeImportedSettings(rawSettings) {
+  const raw = rawSettings && typeof rawSettings === "object" ? rawSettings : {};
+  const exercises = Array.isArray(raw.exercises)
+    ? raw.exercises.map((item) => String(item).trim()).filter(Boolean).slice(0, 200)
+    : DEFAULTS.exercises;
+  const settings = {
+    startTime: isValidHHMM(raw.startTime) ? raw.startTime : DEFAULTS.startTime,
+    endTime: isValidHHMM(raw.endTime) ? raw.endTime : DEFAULTS.endTime,
+    scheduleMode: raw.scheduleMode === SCHEDULE_MODE_FIXED ? SCHEDULE_MODE_FIXED : SCHEDULE_MODE_AFTER_CONFIRMATION,
+    queueOrderMode: raw.queueOrderMode === QUEUE_ORDER_LISTED ? QUEUE_ORDER_LISTED : QUEUE_ORDER_RANDOM,
+    audioMode: raw.audioMode === AUDIO_MODE_BEEP ? AUDIO_MODE_BEEP : AUDIO_MODE_VOICE,
+    intervalMinutes: Math.max(1, Number(raw.intervalMinutes || DEFAULTS.intervalMinutes)),
+    repeatReminderMinutes: Math.max(1, Number(raw.repeatReminderMinutes || DEFAULTS.repeatReminderMinutes)),
+    reminderIntroText: String(raw.reminderIntroText || DEFAULTS.reminderIntroText).trim() || DEFAULTS.reminderIntroText,
+    reminderOutroText: String(raw.reminderOutroText ?? DEFAULTS.reminderOutroText).trim(),
+    volume: Math.max(0, Math.min(1, Number(raw.volume ?? DEFAULTS.volume))),
+    soundMuted: Boolean(raw.soundMuted),
+    soundFile: DEFAULTS.soundFile,
+    exercises: exercises.length > 0 ? exercises : DEFAULTS.exercises
+  };
+
+  if (settings.startTime >= settings.endTime) {
+    settings.startTime = DEFAULTS.startTime;
+    settings.endTime = DEFAULTS.endTime;
+  }
+
+  return settings;
+}
+
+async function exportData() {
+  const settings = await getSettings();
+  const state = await getState();
+
+  return {
+    ok: true,
+    data: {
+      version: EXPORT_VERSION,
+      exportedAt: new Date().toISOString(),
+      settings,
+      state: {
+        pausedUntil: state.pausedUntil || null,
+        deferredExercise: state.deferredExercise || null,
+        queueDayKey: state.queueDayKey || null,
+        queueRemaining: sanitizeQueue(state.queueRemaining, settings.exercises),
+        completedToday: sanitizeCompletedToday(state.completedToday),
+        historyByDay: sanitizeHistoryByDay(state.historyByDay)
+      }
+    }
+  };
+}
+
+async function importData(data) {
+  if (!data || typeof data !== "object") {
+    return { ok: false, reason: "INVALID_DATA" };
+  }
+
+  const now = new Date();
+  const settings = sanitizeImportedSettings(data.settings || data);
+  const importedState = data.state && typeof data.state === "object" ? data.state : {};
+  const historyByDay = sanitizeHistoryByDay(importedState.historyByDay);
+  const currentDayKey = todayKey(now);
+  const completedToday = historyByDay[currentDayKey] || sanitizeCompletedToday(importedState.completedToday);
+  const queueRemaining = sanitizeQueue(importedState.queueRemaining, settings.exercises);
+  const deferredExercise = settings.exercises.includes(importedState.deferredExercise)
+    ? importedState.deferredExercise
+    : null;
+  const pausedUntilDate = parseIsoDate(importedState.pausedUntil);
+  const pausedUntil = pausedUntilDate && pausedUntilDate > now ? pausedUntilDate.toISOString() : null;
+
+  if (completedToday.length > 0) {
+    historyByDay[currentDayKey] = completedToday;
+  }
+
+  await chrome.storage.sync.set(settings);
+  await chrome.storage.local.set({
+    nextDueAt: null,
+    pendingReminder: null,
+    lastCompletedAt: null,
+    lastExercise: null,
+    lastTickAt: now.toISOString(),
+    reminderWindowId: null,
+    pausedUntil,
+    deferredExercise,
+    queueDayKey: currentDayKey,
+    queueRemaining,
+    completedToday,
+    historyByDay
+  });
+  await clearReminderPresentation();
+  await tick();
+
+  return { ok: true };
 }
 
 chrome.notifications.onButtonClicked.addListener(async (notificationId, buttonIndex) => {
@@ -918,6 +1216,31 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       return;
     }
 
+    if (message?.type === "SET_PAUSE") {
+      sendResponse(await setPauseFor(message.minutes));
+      return;
+    }
+
+    if (message?.type === "CLEAR_PAUSE") {
+      sendResponse(await clearPause());
+      return;
+    }
+
+    if (message?.type === "TRIGGER_TEST_REMINDER") {
+      sendResponse(await triggerTestReminder());
+      return;
+    }
+
+    if (message?.type === "EXPORT_DATA") {
+      sendResponse(await exportData());
+      return;
+    }
+
+    if (message?.type === "IMPORT_DATA") {
+      sendResponse(await importData(message.data));
+      return;
+    }
+
     if (message?.type === "SETTINGS_UPDATED") {
       const now = new Date();
       const runtime = await getRuntimeState(now);
@@ -985,6 +1308,11 @@ async function tick() {
   }
 
   const { settings, state } = runtime;
+
+  if (state.isPaused) {
+    await clearReminderPresentation();
+    return;
+  }
 
   if (state.pendingReminder) {
     await refreshPendingReminderPresentation(state.pendingReminder, settings);
