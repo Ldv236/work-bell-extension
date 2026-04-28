@@ -178,7 +178,7 @@ function refresh() {
       setAlertMode();
       setActionState(false, false);
       setMuteButtonState(response.settings);
-      setPauseButtonState(response.state);
+      setPauseButtonState(null);
       statusEl.textContent = 'Проверьте настройки: время "с" должно быть раньше времени "по".';
       exerciseEl.textContent = "";
       nextEl.textContent = "";

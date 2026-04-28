@@ -138,14 +138,14 @@ async function getSettings() {
   return {
     startTime: raw.startTime,
     endTime: raw.endTime,
-    intervalMinutes: Math.max(1, Number(raw.intervalMinutes || DEFAULTS.intervalMinutes)),
-    repeatReminderMinutes: Math.max(1, Number(raw.repeatReminderMinutes || DEFAULTS.repeatReminderMinutes)),
+    intervalMinutes: positiveNumber(raw.intervalMinutes, DEFAULTS.intervalMinutes),
+    repeatReminderMinutes: positiveNumber(raw.repeatReminderMinutes, DEFAULTS.repeatReminderMinutes),
     scheduleMode,
     queueOrderMode,
     audioMode,
     reminderIntroText,
     reminderOutroText,
-    volume: Math.max(0, Math.min(1, Number(raw.volume ?? DEFAULTS.volume))),
+    volume: normalizedVolume(raw.volume),
     soundMuted: Boolean(raw.soundMuted),
     soundFile: DEFAULTS.soundFile,
     exercises
@@ -170,7 +170,14 @@ async function getState() {
 }
 
 function isValidHHMM(value) {
-  return /^\d{2}:\d{2}$/.test(String(value || ""));
+  const match = /^(\d{2}):(\d{2})$/.exec(String(value || ""));
+  if (!match) {
+    return false;
+  }
+
+  const hours = Number(match[1]);
+  const minutes = Number(match[2]);
+  return hours >= 0 && hours <= 23 && minutes >= 0 && minutes <= 59;
 }
 
 function parseHHMM(hhmm) {
@@ -695,6 +702,30 @@ function isPauseActive(pausedUntil, now) {
   return Boolean(pauseDate && pauseDate > now);
 }
 
+function positiveNumber(value, fallback) {
+  const number = Number(value);
+  return Number.isFinite(number) && number >= 1 ? number : fallback;
+}
+
+function normalizedVolume(value, fallback = DEFAULTS.volume) {
+  const number = Number(value);
+  return Number.isFinite(number) ? Math.max(0, Math.min(1, number)) : fallback;
+}
+
+function computeDueAfterPause(pausedUntil, settings) {
+  const pauseEnd = parseIsoDate(pausedUntil) || new Date();
+
+  if (settings.scheduleMode === SCHEDULE_MODE_FIXED) {
+    return computeNextDueAtOrAfter(pauseEnd, settings);
+  }
+
+  if (isWithinWindow(pauseEnd, settings)) {
+    return pauseEnd;
+  }
+
+  return computeRelativeDueAfter(pauseEnd, settings);
+}
+
 function buildStatusState(state, settings, extras = {}) {
   const nextExercise = extras.nextExercise ?? getNextExercisePreview(state, settings);
   const deferredExercise = String(state.deferredExercise || "").trim();
@@ -983,19 +1014,24 @@ async function handleRepeatAlarm() {
 async function setPauseFor(minutes) {
   const now = new Date();
   const settings = await getSettings();
+  if (!isValidWindow(settings, now)) {
+    return { ok: false, reason: "INVALID_WINDOW" };
+  }
+
   const rawState = await getState();
   const state = await normalizeDayState(rawState, settings, now, { preserveEmptyQueue: true });
   const pauseMinutes = Math.max(1, Math.min(24 * 60, Number(minutes || 30)));
   const pausedUntil = new Date(now.getTime() + pauseMinutes * 60000).toISOString();
-  const activeExercise = state.pendingReminder?.exercise || null;
+  const activeExercise = state.pendingReminder?.test ? null : (state.pendingReminder?.exercise || null);
   const queueRemaining = activeExercise
     ? restoreExerciseToQueue(activeExercise, state.queueRemaining, settings)
     : state.queueRemaining;
+  const nextDueAt = computeDueAfterPause(pausedUntil, settings).toISOString();
 
   await chrome.storage.local.set({
     pausedUntil,
     pendingReminder: null,
-    nextDueAt: pausedUntil,
+    nextDueAt,
     lastTickAt: now.toISOString(),
     queueRemaining,
     queueDayKey: todayKey(now),
@@ -1007,7 +1043,11 @@ async function setPauseFor(minutes) {
 }
 
 async function clearPause() {
-  await chrome.storage.local.set({ pausedUntil: null });
+  await chrome.storage.local.set({
+    pausedUntil: null,
+    nextDueAt: null,
+    lastTickAt: new Date().toISOString()
+  });
   await tick();
   return { ok: true };
 }
@@ -1064,11 +1104,11 @@ function sanitizeImportedSettings(rawSettings) {
     scheduleMode: raw.scheduleMode === SCHEDULE_MODE_FIXED ? SCHEDULE_MODE_FIXED : SCHEDULE_MODE_AFTER_CONFIRMATION,
     queueOrderMode: raw.queueOrderMode === QUEUE_ORDER_LISTED ? QUEUE_ORDER_LISTED : QUEUE_ORDER_RANDOM,
     audioMode: raw.audioMode === AUDIO_MODE_BEEP ? AUDIO_MODE_BEEP : AUDIO_MODE_VOICE,
-    intervalMinutes: Math.max(1, Number(raw.intervalMinutes || DEFAULTS.intervalMinutes)),
-    repeatReminderMinutes: Math.max(1, Number(raw.repeatReminderMinutes || DEFAULTS.repeatReminderMinutes)),
+    intervalMinutes: positiveNumber(raw.intervalMinutes, DEFAULTS.intervalMinutes),
+    repeatReminderMinutes: positiveNumber(raw.repeatReminderMinutes, DEFAULTS.repeatReminderMinutes),
     reminderIntroText: String(raw.reminderIntroText || DEFAULTS.reminderIntroText).trim() || DEFAULTS.reminderIntroText,
     reminderOutroText: String(raw.reminderOutroText ?? DEFAULTS.reminderOutroText).trim(),
-    volume: Math.max(0, Math.min(1, Number(raw.volume ?? DEFAULTS.volume))),
+    volume: normalizedVolume(raw.volume),
     soundMuted: Boolean(raw.soundMuted),
     soundFile: DEFAULTS.soundFile,
     exercises: exercises.length > 0 ? exercises : DEFAULTS.exercises
@@ -1246,6 +1286,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       const runtime = await getRuntimeState(now);
       if (runtime.state.pendingReminder) {
         await refreshPendingReminderPresentation(runtime.state.pendingReminder, runtime.settings, { forceNotification: true });
+      } else if (runtime.state.isPaused) {
+        await chrome.storage.local.set({
+          nextDueAt: computeDueAfterPause(runtime.state.pausedUntil, runtime.settings).toISOString(),
+          lastTickAt: now.toISOString()
+        });
       } else if (runtime.settings.scheduleMode === SCHEDULE_MODE_FIXED) {
         await chrome.storage.local.set({
           nextDueAt: null,

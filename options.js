@@ -158,7 +158,7 @@ async function load() {
   repeatReminderMinutesEl.value = settings.repeatReminderMinutes;
   reminderIntroTextEl.value = settings.reminderIntroText;
   reminderOutroTextEl.value = settings.reminderOutroText;
-  volumeEl.value = Math.round(Number(settings.volume || DEFAULTS.volume) * 100);
+  volumeEl.value = Math.round(Number(settings.volume ?? DEFAULTS.volume) * 100);
   volumeValueEl.textContent = `${volumeEl.value}%`;
   exercisesEl.value = (settings.exercises || []).join("\n");
   autoResizeExercises();
