@@ -20,6 +20,7 @@ const tipEl = document.getElementById("tip");
 const isReminderMode = new URLSearchParams(window.location.search).get("mode") === "reminder";
 let refreshTimer = null;
 let todayOpen = false;
+let activeReminderKind = "exercise";
 
 if (isReminderMode) {
   document.body.classList.add("reminder");
@@ -76,10 +77,13 @@ function getReminderKind(reminder) {
 
 function setActionMode(kind, hasActiveReminder) {
   const isBedtime = hasActiveReminder && kind === "bedtime";
-  actionsEl.hidden = isBedtime;
-  doneBtn.textContent = "Сделано";
-  deferBtn.hidden = false;
-  skipBtn.hidden = false;
+  const showBedtimeClose = isBedtime && isReminderMode;
+  activeReminderKind = isBedtime ? "bedtime" : "exercise";
+  actionsEl.hidden = isBedtime && !showBedtimeClose;
+  doneBtn.textContent = showBedtimeClose ? "Ок" : "Сделано";
+  deferBtn.hidden = isBedtime;
+  skipBtn.hidden = isBedtime;
+  actionsEl.classList.toggle("single-action", showBedtimeClose);
 }
 
 function setActionState(hasActiveReminder, isBusy) {
@@ -296,6 +300,11 @@ function resolveReminder(type) {
 }
 
 doneBtn.addEventListener("click", () => {
+  if (activeReminderKind === "bedtime" && isReminderMode) {
+    window.close();
+    return;
+  }
+
   resolveReminder("MARK_DONE");
 });
 
