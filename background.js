@@ -39,6 +39,10 @@ const DEFAULT_EXERCISES = [
 const DEFAULTS = {
   startTime: "09:00",
   endTime: "22:00",
+  bedtimeEnabled: true,
+  bedtimeEndTime: "23:30",
+  bedtimeIntervalMinutes: 15,
+  bedtimeReminderText: "Пора сворачивать дела и идти спать.",
   intervalMinutes: 60,
   repeatReminderMinutes: 3,
   scheduleMode: "after_confirmation",
@@ -58,6 +62,8 @@ const QUEUE_ORDER_RANDOM = "random";
 const QUEUE_ORDER_LISTED = "listed";
 const AUDIO_MODE_VOICE = "voice";
 const AUDIO_MODE_BEEP = "beep";
+const REMINDER_KIND_EXERCISE = "exercise";
+const REMINDER_KIND_BEDTIME = "bedtime";
 const TICK_ALARM = "work-bell-tick";
 const REPEAT_ALARM = "work-bell-repeat";
 const NOTIFICATION_ID = "work-bell-reminder";
@@ -117,6 +123,10 @@ async function getSettings() {
   const migratedExercises = migrateExercises(raw.exercises);
   const reminderIntroTextRaw = String(raw.reminderIntroText ?? DEFAULTS.reminderIntroText).trim();
   const reminderOutroTextRaw = String(raw.reminderOutroText ?? DEFAULTS.reminderOutroText).trim();
+  let bedtimeEnabled = raw.bedtimeEnabled !== false;
+  const bedtimeEndTime = isValidHHMM(raw.bedtimeEndTime) ? raw.bedtimeEndTime : DEFAULTS.bedtimeEndTime;
+  const bedtimeReminderText = String(raw.bedtimeReminderText ?? DEFAULTS.bedtimeReminderText).trim()
+    || DEFAULTS.bedtimeReminderText;
   const reminderIntroText = reminderIntroTextRaw === LEGACY_REMINDER_INTRO_TEXT
     ? DEFAULTS.reminderIntroText
     : (reminderIntroTextRaw || DEFAULTS.reminderIntroText);
@@ -124,6 +134,10 @@ async function getSettings() {
     ? DEFAULTS.reminderOutroText
     : reminderOutroTextRaw;
   const exercises = migratedExercises.exercises.length > 0 ? migratedExercises.exercises : DEFAULTS.exercises;
+
+  if (bedtimeEnabled && isValidHHMM(raw.endTime) && raw.endTime >= bedtimeEndTime) {
+    bedtimeEnabled = false;
+  }
 
   if (migratedExercises.changed
     || reminderIntroTextRaw === LEGACY_REMINDER_INTRO_TEXT
@@ -138,6 +152,10 @@ async function getSettings() {
   return {
     startTime: raw.startTime,
     endTime: raw.endTime,
+    bedtimeEnabled,
+    bedtimeEndTime,
+    bedtimeIntervalMinutes: positiveNumber(raw.bedtimeIntervalMinutes, DEFAULTS.bedtimeIntervalMinutes),
+    bedtimeReminderText,
     intervalMinutes: positiveNumber(raw.intervalMinutes, DEFAULTS.intervalMinutes),
     repeatReminderMinutes: positiveNumber(raw.repeatReminderMinutes, DEFAULTS.repeatReminderMinutes),
     scheduleMode,
@@ -161,6 +179,9 @@ async function getState() {
     lastTickAt: null,
     reminderWindowId: null,
     pausedUntil: null,
+    nextBedtimeDueAt: null,
+    bedtimeDoneDayKey: null,
+    bedtimeLastDoneAt: null,
     deferredExercise: null,
     queueDayKey: null,
     queueRemaining: [],
@@ -206,12 +227,47 @@ function isSameCalendarDay(left, right) {
 }
 
 function isValidWindow(settings, baseDate = new Date()) {
-  return atDay(settings.startTime, baseDate).getTime() < atDay(settings.endTime, baseDate).getTime();
+  if (!isValidHHMM(settings.startTime) || !isValidHHMM(settings.endTime)) {
+    return false;
+  }
+
+  const dayStart = atDay(settings.startTime, baseDate);
+  const dayEnd = atDay(settings.endTime, baseDate);
+  if (dayStart.getTime() >= dayEnd.getTime()) {
+    return false;
+  }
+
+  if (!settings.bedtimeEnabled) {
+    return true;
+  }
+
+  if (!isValidHHMM(settings.bedtimeEndTime)) {
+    return false;
+  }
+
+  return dayEnd.getTime() < atDay(settings.bedtimeEndTime, baseDate).getTime();
 }
 
 function isWithinWindow(moment, settings) {
   const start = atDay(settings.startTime, moment);
   const end = atDay(settings.endTime, moment);
+  return moment >= start && moment < end;
+}
+
+function isBedtimeWindowConfigured(settings, baseDate = new Date()) {
+  return Boolean(settings.bedtimeEnabled
+    && isValidHHMM(settings.endTime)
+    && isValidHHMM(settings.bedtimeEndTime)
+    && atDay(settings.endTime, baseDate).getTime() < atDay(settings.bedtimeEndTime, baseDate).getTime());
+}
+
+function isWithinBedtimeWindow(moment, settings) {
+  if (!isBedtimeWindowConfigured(settings, moment)) {
+    return false;
+  }
+
+  const start = atDay(settings.endTime, moment);
+  const end = atDay(settings.bedtimeEndTime, moment);
   return moment >= start && moment <= end;
 }
 
@@ -235,7 +291,7 @@ function computeSlot(now, settings, inclusive) {
     return start;
   }
 
-  if (now > end || (!inclusive && now.getTime() === end.getTime())) {
+  if (now >= end || (!inclusive && now.getTime() === end.getTime())) {
     const tomorrow = new Date(start);
     tomorrow.setDate(tomorrow.getDate() + 1);
     return tomorrow;
@@ -247,7 +303,7 @@ function computeSlot(now, settings, inclusive) {
     : Math.floor(offsetMs / intervalMs) + 1;
   const next = new Date(start.getTime() + slotsPassed * intervalMs);
 
-  if (next > end) {
+  if (next >= end) {
     const tomorrow = new Date(start);
     tomorrow.setDate(tomorrow.getDate() + 1);
     return tomorrow;
@@ -306,6 +362,39 @@ function computeRelativeDueAfter(baseMoment, settings) {
   return tomorrow;
 }
 
+function computeBedtimeStart(baseMoment, settings) {
+  return atDay(settings.endTime, baseMoment);
+}
+
+function computeTomorrowBedtimeStart(baseMoment, settings) {
+  const tomorrow = computeBedtimeStart(baseMoment, settings);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  return tomorrow;
+}
+
+function didCompleteBedtimeToday(state, now = new Date()) {
+  return state.bedtimeDoneDayKey === todayKey(now);
+}
+
+function computeNextBedtimeDue(now, settings, state = {}) {
+  if (!isBedtimeWindowConfigured(settings, now)) {
+    return null;
+  }
+
+  const start = computeBedtimeStart(now, settings);
+  const end = atDay(settings.bedtimeEndTime, now);
+
+  if (now < start) {
+    return start;
+  }
+
+  if (now <= end && !didCompleteBedtimeToday(state, now)) {
+    return now;
+  }
+
+  return computeTomorrowBedtimeStart(now, settings);
+}
+
 function sanitizeQueue(queue, fallbackExercises) {
   const validSet = new Set(fallbackExercises);
   return Array.isArray(queue)
@@ -361,13 +450,24 @@ async function normalizeDayState(rawState, settings, now = new Date(), options =
   let hasChanges = false;
 
   if (queueDayKey !== currentDayKey) {
+    const previousDayEntries = historyByDay[queueDayKey] || [];
+    if (/^\d{4}-\d{2}-\d{2}$/.test(String(queueDayKey || ""))
+      && completedToday.length > 0
+      && completedToday.length > previousDayEntries.length) {
+      historyByDay = {
+        ...historyByDay,
+        [queueDayKey]: completedToday
+      };
+    }
+
     queueDayKey = currentDayKey;
     queueRemaining = [];
     completedToday = historyByDay[currentDayKey] || [];
     hasChanges = true;
   }
 
-  if (completedToday.length > 0 && !historyByDay[currentDayKey]) {
+  const currentHistoryEntries = historyByDay[currentDayKey] || [];
+  if (completedToday.length > 0 && completedToday.length > currentHistoryEntries.length) {
     historyByDay = {
       ...historyByDay,
       [currentDayKey]: completedToday
@@ -411,6 +511,24 @@ function buildReminderSpeech(exercise, settings) {
     introText: parts.join(" "),
     repeatText: exercise
   };
+}
+
+function getReminderKind(reminder) {
+  return reminder?.kind === REMINDER_KIND_BEDTIME ? REMINDER_KIND_BEDTIME : REMINDER_KIND_EXERCISE;
+}
+
+function getReminderText(reminder, settings) {
+  if (getReminderKind(reminder) === REMINDER_KIND_BEDTIME) {
+    return String(reminder?.message || settings.bedtimeReminderText || DEFAULTS.bedtimeReminderText).trim();
+  }
+
+  return String(reminder?.exercise || "").trim();
+}
+
+function getReminderRepeatMinutes(settings, reminder) {
+  return getReminderKind(reminder) === REMINDER_KIND_BEDTIME
+    ? settings.bedtimeIntervalMinutes
+    : settings.repeatReminderMinutes;
 }
 
 async function ensureOffscreen() {
@@ -469,12 +587,17 @@ async function stopOffscreenSignal() {
 }
 
 async function playReminderIntro(settings, reminder) {
+  if (getReminderKind(reminder) === REMINDER_KIND_BEDTIME) {
+    await playSignal(getReminderText(reminder, settings), settings);
+    return;
+  }
+
   const speech = buildReminderSpeech(reminder.exercise, settings);
   await playSignal(speech.introText, settings);
 }
 
 async function playReminderRepeat(settings, reminder) {
-  await playSignal(reminder.exercise, settings);
+  await playSignal(getReminderText(reminder, settings), settings);
 }
 
 async function playPreview(settings, volumeOverride, introOverride, outroOverride, audioModeOverride) {
@@ -524,18 +647,23 @@ async function setBadgePending(isPending) {
 
 async function showReminderNotification(reminder) {
   const isTest = Boolean(reminder.test);
+  const isBedtime = getReminderKind(reminder) === REMINDER_KIND_BEDTIME;
   await chrome.notifications.create(NOTIFICATION_ID, {
     type: "basic",
     iconUrl: "icons/128.png",
-    title: isTest ? "Тестовое напоминание Work Bell" : "Пора встать от компьютера",
-    message: `Сейчас сделать: ${reminder.exercise}`,
+    title: isBedtime
+      ? "Пора спать"
+      : (isTest ? "Тестовое напоминание Work Bell" : "Пора встать от компьютера"),
+    message: isBedtime ? (reminder.message || "Пора идти спать") : `Сейчас сделать: ${reminder.exercise}`,
     contextMessage: isTest
       ? "Это тест: очередь и история не изменятся."
-      : "Откройте окно, чтобы отложить или включить паузу.",
-    buttons: [
-      { title: "Сделано" },
-      { title: "Пропущу" }
-    ],
+      : (isBedtime ? "Закройте напоминание, когда уходите спать." : "Откройте окно, чтобы отложить или включить паузу."),
+    buttons: isBedtime
+      ? [{ title: "Пошел спать" }]
+      : [
+        { title: "Сделано" },
+        { title: "Пропущу" }
+      ],
     priority: 2,
     requireInteraction: true
   });
@@ -736,6 +864,7 @@ function buildStatusState(state, settings, extras = {}) {
     nextExercise,
     deferredExercise,
     isDeferredNext: Boolean(deferredExercise && deferredExercise === nextExercise),
+    isBedtimeDoneToday: didCompleteBedtimeToday(state),
     todaySummary: buildTodaySummary(state.completedToday),
     historySummary: buildHistorySummary(state.historyByDay)
   };
@@ -765,7 +894,7 @@ async function refreshPendingReminderPresentation(pendingReminder, settings, opt
   if (options.forceWindow) {
     await openReminderWindow();
   }
-  await ensureRepeatAlarmScheduled(settings.repeatReminderMinutes);
+  await ensureRepeatAlarmScheduled(getReminderRepeatMinutes(settings, pendingReminder));
 }
 
 async function getRuntimeState(now = new Date()) {
@@ -781,6 +910,7 @@ async function getRuntimeState(now = new Date()) {
       await chrome.storage.local.set({
         pendingReminder: null,
         nextDueAt: null,
+        nextBedtimeDueAt: null,
         reminderWindowId: null
       });
       await clearReminderPresentation();
@@ -790,6 +920,7 @@ async function getRuntimeState(now = new Date()) {
   if (!isValidWindow(settings, now)) {
     await chrome.storage.local.set({
       nextDueAt: null,
+      nextBedtimeDueAt: null,
       pendingReminder: null,
       lastTickAt: now.toISOString()
     });
@@ -799,6 +930,7 @@ async function getRuntimeState(now = new Date()) {
       state: {
         ...buildStatusState(stateWithDay, settings, {
           nextDueAt: null,
+          nextBedtimeDueAt: null,
           pendingReminder: null,
           lastTickAt: now.toISOString(),
           hasActiveReminder: false,
@@ -825,6 +957,7 @@ async function getRuntimeState(now = new Date()) {
       state: buildStatusState(stateWithDay, settings, {
         pendingReminder: null,
         lastTickAt: now.toISOString(),
+        nextBedtimeDueAt: computeNextBedtimeDue(now, settings, stateWithDay)?.toISOString() || null,
         hasActiveReminder: false,
         isPaused: true,
         pausedUntil: stateWithDay.pausedUntil
@@ -851,9 +984,14 @@ async function getRuntimeState(now = new Date()) {
   }
 
   if (pendingReminder?.exercise && pendingReminder?.dueAt) {
+    const pendingKind = getReminderKind(pendingReminder);
+    const lastExercise = pendingKind === REMINDER_KIND_EXERCISE
+      ? pendingReminder.exercise
+      : stateWithDay.lastExercise;
+
     await chrome.storage.local.set({
       pendingReminder,
-      lastExercise: pendingReminder.exercise,
+      lastExercise,
       lastTickAt: now.toISOString()
     });
 
@@ -861,8 +999,9 @@ async function getRuntimeState(now = new Date()) {
       settings,
       state: buildStatusState(stateWithDay, settings, {
         pendingReminder,
-        lastExercise: pendingReminder.exercise,
+        lastExercise,
         lastTickAt: now.toISOString(),
+        nextBedtimeDueAt: computeNextBedtimeDue(now, settings, stateWithDay)?.toISOString() || null,
         hasActiveReminder: true,
         isPaused: false
       })
@@ -872,6 +1011,7 @@ async function getRuntimeState(now = new Date()) {
   const normalizedState = buildStatusState(stateWithDay, settings, {
     pendingReminder: null,
     nextDueAt: normalizeNextDue(stateWithDay, now, settings).toISOString(),
+    nextBedtimeDueAt: computeNextBedtimeDue(now, settings, stateWithDay)?.toISOString() || null,
     lastTickAt: now.toISOString(),
     hasActiveReminder: false,
     isPaused: false
@@ -879,6 +1019,7 @@ async function getRuntimeState(now = new Date()) {
 
   await chrome.storage.local.set({
     nextDueAt: normalizedState.nextDueAt,
+    nextBedtimeDueAt: normalizedState.nextBedtimeDueAt,
     lastTickAt: normalizedState.lastTickAt
   });
 
@@ -891,6 +1032,7 @@ async function triggerReminder(now, settings, state) {
   const exercise = effectiveQueue[0] || settings.exercises[0];
   const nextQueue = effectiveQueue.slice(1);
   const reminder = {
+    kind: REMINDER_KIND_EXERCISE,
     exercise,
     dueAt: now.toISOString(),
     startedAt: now.toISOString()
@@ -913,6 +1055,29 @@ async function triggerReminder(now, settings, state) {
   await playReminderIntro(settings, reminder);
 }
 
+async function triggerBedtimeReminder(now, settings) {
+  const text = String(settings.bedtimeReminderText || DEFAULTS.bedtimeReminderText).trim();
+  const reminder = {
+    kind: REMINDER_KIND_BEDTIME,
+    message: text,
+    exercise: text,
+    dueAt: now.toISOString(),
+    startedAt: now.toISOString()
+  };
+
+  await chrome.storage.local.set({
+    pendingReminder: reminder,
+    nextBedtimeDueAt: null,
+    lastTickAt: now.toISOString()
+  });
+
+  await setBadgePending(true);
+  await showReminderNotification(reminder);
+  await openReminderWindow();
+  await scheduleRepeatAlarm(settings.bedtimeIntervalMinutes);
+  await playReminderIntro(settings, reminder);
+}
+
 async function resolveReminder(countExercise, options = {}) {
   const now = new Date();
   const settings = await getSettings();
@@ -921,6 +1086,23 @@ async function resolveReminder(countExercise, options = {}) {
   const state = await normalizeDayState(rawState, settings, now, {
     preserveEmptyQueue: deferExercise
   });
+
+  if (getReminderKind(state.pendingReminder) === REMINDER_KIND_BEDTIME) {
+    const nextBedtimeDueAt = isBedtimeWindowConfigured(settings, now)
+      ? computeTomorrowBedtimeStart(now, settings).toISOString()
+      : null;
+
+    await chrome.storage.local.set({
+      pendingReminder: null,
+      nextBedtimeDueAt,
+      bedtimeDoneDayKey: todayKey(now),
+      bedtimeLastDoneAt: now.toISOString(),
+      lastTickAt: now.toISOString()
+    });
+    await clearReminderPresentation();
+    return { ok: true, nextBedtimeDueAt, bedtime: true };
+  }
+
   const completedExercise = state.pendingReminder?.exercise || state.lastExercise || null;
   const completedToday = [...state.completedToday];
   const historyByDay = sanitizeHistoryByDay(state.historyByDay);
@@ -1022,7 +1204,9 @@ async function setPauseFor(minutes) {
   const state = await normalizeDayState(rawState, settings, now, { preserveEmptyQueue: true });
   const pauseMinutes = Math.max(1, Math.min(24 * 60, Number(minutes || 30)));
   const pausedUntil = new Date(now.getTime() + pauseMinutes * 60000).toISOString();
-  const activeExercise = state.pendingReminder?.test ? null : (state.pendingReminder?.exercise || null);
+  const activeExercise = state.pendingReminder?.test || getReminderKind(state.pendingReminder) === REMINDER_KIND_BEDTIME
+    ? null
+    : (state.pendingReminder?.exercise || null);
   const queueRemaining = activeExercise
     ? restoreExerciseToQueue(activeExercise, state.queueRemaining, settings)
     : state.queueRemaining;
@@ -1101,6 +1285,11 @@ function sanitizeImportedSettings(rawSettings) {
   const settings = {
     startTime: isValidHHMM(raw.startTime) ? raw.startTime : DEFAULTS.startTime,
     endTime: isValidHHMM(raw.endTime) ? raw.endTime : DEFAULTS.endTime,
+    bedtimeEnabled: raw.bedtimeEnabled !== false,
+    bedtimeEndTime: isValidHHMM(raw.bedtimeEndTime) ? raw.bedtimeEndTime : DEFAULTS.bedtimeEndTime,
+    bedtimeIntervalMinutes: positiveNumber(raw.bedtimeIntervalMinutes, DEFAULTS.bedtimeIntervalMinutes),
+    bedtimeReminderText: String(raw.bedtimeReminderText || DEFAULTS.bedtimeReminderText).trim()
+      || DEFAULTS.bedtimeReminderText,
     scheduleMode: raw.scheduleMode === SCHEDULE_MODE_FIXED ? SCHEDULE_MODE_FIXED : SCHEDULE_MODE_AFTER_CONFIRMATION,
     queueOrderMode: raw.queueOrderMode === QUEUE_ORDER_LISTED ? QUEUE_ORDER_LISTED : QUEUE_ORDER_RANDOM,
     audioMode: raw.audioMode === AUDIO_MODE_BEEP ? AUDIO_MODE_BEEP : AUDIO_MODE_VOICE,
@@ -1119,6 +1308,10 @@ function sanitizeImportedSettings(rawSettings) {
     settings.endTime = DEFAULTS.endTime;
   }
 
+  if (settings.bedtimeEnabled && settings.endTime >= settings.bedtimeEndTime) {
+    settings.bedtimeEnabled = false;
+  }
+
   return settings;
 }
 
@@ -1134,6 +1327,9 @@ async function exportData() {
       settings,
       state: {
         pausedUntil: state.pausedUntil || null,
+        nextBedtimeDueAt: state.nextBedtimeDueAt || null,
+        bedtimeDoneDayKey: state.bedtimeDoneDayKey || null,
+        bedtimeLastDoneAt: state.bedtimeLastDoneAt || null,
         deferredExercise: state.deferredExercise || null,
         queueDayKey: state.queueDayKey || null,
         queueRemaining: sanitizeQueue(state.queueRemaining, settings.exercises),
@@ -1154,13 +1350,20 @@ async function importData(data) {
   const importedState = data.state && typeof data.state === "object" ? data.state : {};
   const historyByDay = sanitizeHistoryByDay(importedState.historyByDay);
   const currentDayKey = todayKey(now);
-  const completedToday = historyByDay[currentDayKey] || sanitizeCompletedToday(importedState.completedToday);
+  const importedCompletedToday = sanitizeCompletedToday(importedState.completedToday);
+  const completedToday = (historyByDay[currentDayKey]?.length || 0) >= importedCompletedToday.length
+    ? (historyByDay[currentDayKey] || [])
+    : importedCompletedToday;
   const queueRemaining = sanitizeQueue(importedState.queueRemaining, settings.exercises);
   const deferredExercise = settings.exercises.includes(importedState.deferredExercise)
     ? importedState.deferredExercise
     : null;
   const pausedUntilDate = parseIsoDate(importedState.pausedUntil);
   const pausedUntil = pausedUntilDate && pausedUntilDate > now ? pausedUntilDate.toISOString() : null;
+  const bedtimeDoneDayKey = /^\d{4}-\d{2}-\d{2}$/.test(String(importedState.bedtimeDoneDayKey || ""))
+    ? importedState.bedtimeDoneDayKey
+    : null;
+  const bedtimeLastDoneAtDate = parseIsoDate(importedState.bedtimeLastDoneAt);
 
   if (completedToday.length > 0) {
     historyByDay[currentDayKey] = completedToday;
@@ -1175,6 +1378,9 @@ async function importData(data) {
     lastTickAt: now.toISOString(),
     reminderWindowId: null,
     pausedUntil,
+    nextBedtimeDueAt: computeNextBedtimeDue(now, settings, { bedtimeDoneDayKey })?.toISOString() || null,
+    bedtimeDoneDayKey,
+    bedtimeLastDoneAt: bedtimeLastDoneAtDate ? bedtimeLastDoneAtDate.toISOString() : null,
     deferredExercise,
     queueDayKey: currentDayKey,
     queueRemaining,
@@ -1312,6 +1518,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           await chrome.storage.local.set({ lastTickAt: now.toISOString() });
         }
       }
+
+      await chrome.storage.local.set({
+        nextBedtimeDueAt: computeNextBedtimeDue(now, runtime.settings, runtime.state)?.toISOString() || null
+      });
       sendResponse({ ok: true });
       return;
     }
@@ -1368,6 +1578,19 @@ async function tick() {
 
   if (now >= nextDueAt && isWithinWindow(nextDueAt, settings)) {
     await triggerReminder(now, settings, state);
+    return;
+  }
+
+  const nextBedtimeDueAt = state.nextBedtimeDueAt
+    ? new Date(state.nextBedtimeDueAt)
+    : computeNextBedtimeDue(now, settings, state);
+
+  if (nextBedtimeDueAt
+    && !Number.isNaN(nextBedtimeDueAt.getTime())
+    && now >= nextBedtimeDueAt
+    && isWithinBedtimeWindow(now, settings)
+    && !didCompleteBedtimeToday(state, now)) {
+    await triggerBedtimeReminder(now, settings);
     return;
   }
 

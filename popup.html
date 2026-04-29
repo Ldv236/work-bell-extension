@@ -254,6 +254,19 @@
       display: none;
     }
 
+    body.reminder #mainControls,
+    body.reminder #pauseBtn,
+    body.reminder #pauseOptions,
+    body.reminder #openOptionsBtn,
+    body.reminder #tip,
+    body.reminder #todayHistory {
+      display: none !important;
+    }
+
+    .actions.bedtime-actions {
+      grid-template-columns: 1fr;
+    }
+
     button {
       min-height: 34px;
       border: 0;
@@ -299,12 +312,12 @@
         <div id="next" class="line muted"></div>
         <div id="todayHistory" class="today-box hidden"></div>
         <div class="btns">
-          <div class="actions">
+          <div id="actions" class="actions">
             <button id="doneBtn" disabled>Сделано</button>
             <button id="deferBtn" class="secondary" disabled>Отложить</button>
             <button id="skipBtn" class="secondary" disabled>Пропущу</button>
           </div>
-          <div id="mainControls" class="pair">
+          <div id="mainControls" class="pair" hidden>
             <button id="todayBtn" class="secondary">История</button>
             <label id="soundToggle" class="sound-toggle">
               <input id="muteBtn" type="checkbox" checked />
@@ -312,15 +325,15 @@
               <span id="soundState" class="sound-state">включен</span>
             </label>
           </div>
-          <button id="pauseBtn" class="secondary">Не беспокоить</button>
+          <button id="pauseBtn" class="secondary" hidden>Не беспокоить</button>
           <div id="pauseOptions" class="pause-options">
             <button class="secondary" data-pause-minutes="30">30 мин</button>
             <button class="secondary" data-pause-minutes="60">1 час</button>
             <button class="secondary" data-pause-minutes="90">1.5 часа</button>
           </div>
-          <button id="openOptionsBtn" class="secondary">Настройки</button>
+          <button id="openOptionsBtn" class="secondary" hidden>Настройки</button>
         </div>
-        <div id="tip" class="tip">"Сделано" учитывает упражнение в статистике за день. "Отложить" вернет это же упражнение в следующий сигнал. "Пропущу" закрывает текущее напоминание без учета.</div>
+        <div id="tip" class="tip" hidden>"Сделано" учитывает упражнение в статистике за день. "Отложить" вернет это же упражнение в следующий сигнал. "Пропущу" закрывает текущее напоминание без учета.</div>
       </div>
     </div>
   </div>

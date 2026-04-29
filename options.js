@@ -39,6 +39,10 @@ const DEFAULT_EXERCISES = [
 const DEFAULTS = {
   startTime: "09:00",
   endTime: "22:00",
+  bedtimeEnabled: true,
+  bedtimeEndTime: "23:30",
+  bedtimeIntervalMinutes: 15,
+  bedtimeReminderText: "Пора сворачивать дела и идти спать.",
   intervalMinutes: 60,
   repeatReminderMinutes: 3,
   scheduleMode: "after_confirmation",
@@ -53,6 +57,10 @@ const DEFAULTS = {
 
 const startTimeEl = document.getElementById("startTime");
 const endTimeEl = document.getElementById("endTime");
+const bedtimeEnabledEl = document.getElementById("bedtimeEnabled");
+const bedtimeEndTimeEl = document.getElementById("bedtimeEndTime");
+const bedtimeIntervalMinutesEl = document.getElementById("bedtimeIntervalMinutes");
+const bedtimeReminderTextEl = document.getElementById("bedtimeReminderText");
 const scheduleModeEl = document.getElementById("scheduleMode");
 const queueOrderModeEl = document.getElementById("queueOrderMode");
 const audioModeEl = document.getElementById("audioMode");
@@ -84,6 +92,13 @@ function autoResizeExercises() {
   const nextHeight = Math.max(minHeight, exercisesEl.scrollHeight);
 
   exercisesEl.style.height = `${Math.ceil(nextHeight)}px`;
+}
+
+function updateBedtimeFields() {
+  const enabled = bedtimeEnabledEl.checked;
+  bedtimeEndTimeEl.disabled = !enabled;
+  bedtimeIntervalMinutesEl.disabled = !enabled;
+  bedtimeReminderTextEl.disabled = !enabled;
 }
 
 function isSameExerciseList(left, right) {
@@ -127,8 +142,15 @@ async function load() {
   const migratedExercises = migrateExercises(rawSettings.exercises);
   const reminderIntroTextRaw = String(rawSettings.reminderIntroText ?? DEFAULTS.reminderIntroText).trim();
   const reminderOutroTextRaw = String(rawSettings.reminderOutroText ?? DEFAULTS.reminderOutroText).trim();
+  const bedtimeEndTime = rawSettings.bedtimeEndTime || DEFAULTS.bedtimeEndTime;
+  const bedtimeEnabled = rawSettings.bedtimeEnabled !== false && rawSettings.endTime < bedtimeEndTime;
   const settings = {
     ...rawSettings,
+    bedtimeEnabled,
+    bedtimeEndTime,
+    bedtimeIntervalMinutes: Number(rawSettings.bedtimeIntervalMinutes || DEFAULTS.bedtimeIntervalMinutes),
+    bedtimeReminderText: String(rawSettings.bedtimeReminderText ?? DEFAULTS.bedtimeReminderText).trim()
+      || DEFAULTS.bedtimeReminderText,
     queueOrderMode: rawSettings.queueOrderMode || DEFAULTS.queueOrderMode,
     exercises: migratedExercises.exercises.length > 0 ? migratedExercises.exercises : DEFAULTS.exercises,
     reminderIntroText: reminderIntroTextRaw === LEGACY_REMINDER_INTRO_TEXT
@@ -151,6 +173,11 @@ async function load() {
 
   startTimeEl.value = settings.startTime;
   endTimeEl.value = settings.endTime;
+  bedtimeEnabledEl.checked = Boolean(settings.bedtimeEnabled);
+  bedtimeEndTimeEl.value = settings.bedtimeEndTime;
+  bedtimeIntervalMinutesEl.value = settings.bedtimeIntervalMinutes;
+  bedtimeReminderTextEl.value = settings.bedtimeReminderText;
+  updateBedtimeFields();
   scheduleModeEl.value = settings.scheduleMode || DEFAULTS.scheduleMode;
   queueOrderModeEl.value = settings.queueOrderMode || DEFAULTS.queueOrderMode;
   audioModeEl.value = settings.audioMode || DEFAULTS.audioMode;
@@ -180,6 +207,16 @@ function validate() {
     return 'Время "с" должно быть раньше времени "по".';
   }
 
+  if (bedtimeEnabledEl.checked) {
+    if (!bedtimeEndTimeEl.value) {
+      return "Укажите вечернее время окончания.";
+    }
+
+    if (endTimeEl.value >= bedtimeEndTimeEl.value) {
+      return 'Вечернее "время по" должно быть позже дневного "Время по".';
+    }
+  }
+
   if (!["after_confirmation", "fixed_slots"].includes(scheduleModeEl.value)) {
     return "Выберите корректный режим интервала.";
   }
@@ -200,8 +237,16 @@ function validate() {
     return "Повтор сигнала должен быть не меньше 1 минуты.";
   }
 
+  if (Number(bedtimeIntervalMinutesEl.value) < 1) {
+    return "Вечерний интервал повтора должен быть не меньше 1 минуты.";
+  }
+
   if (!String(reminderIntroTextEl.value).trim()) {
     return "Заполните начало фразы.";
+  }
+
+  if (bedtimeEnabledEl.checked && !String(bedtimeReminderTextEl.value).trim()) {
+    return "Заполните текст вечернего напоминания.";
   }
 
   if (list.length === 0) {
@@ -215,6 +260,10 @@ function collectSettings() {
   return {
     startTime: startTimeEl.value,
     endTime: endTimeEl.value,
+    bedtimeEnabled: bedtimeEnabledEl.checked,
+    bedtimeEndTime: bedtimeEndTimeEl.value || DEFAULTS.bedtimeEndTime,
+    bedtimeIntervalMinutes: Number(bedtimeIntervalMinutesEl.value),
+    bedtimeReminderText: String(bedtimeReminderTextEl.value).trim() || DEFAULTS.bedtimeReminderText,
     scheduleMode: scheduleModeEl.value,
     queueOrderMode: queueOrderModeEl.value,
     audioMode: audioModeEl.value,
@@ -296,7 +345,7 @@ function testReminder() {
 
     const reasonText = {
       ACTIVE_REMINDER: "Сначала закройте активное напоминание.",
-      INVALID_WINDOW: 'Проверьте настройки: время "с" должно быть раньше времени "по".',
+      INVALID_WINDOW: "Проверьте дневной и вечерний период в настройках.",
       PAUSED: "Сначала снимите режим \"Не беспокоить\"."
     };
     flashStatus(reasonText[response?.reason] || "Не удалось создать тестовое напоминание", "error", 2600);
@@ -357,6 +406,7 @@ volumeEl.addEventListener("input", () => {
   volumeValueEl.textContent = `${volumeEl.value}%`;
 });
 
+bedtimeEnabledEl.addEventListener("change", updateBedtimeFields);
 exercisesEl.addEventListener("input", autoResizeExercises);
 
 saveBtn.addEventListener("click", () => {

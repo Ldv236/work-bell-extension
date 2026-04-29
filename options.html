@@ -81,6 +81,21 @@
       font-size: 12px;
     }
 
+    .check-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-height: 34px;
+      margin: 0;
+    }
+
+    .check-row input {
+      width: 16px;
+      height: 16px;
+      margin: 0;
+      accent-color: var(--ok);
+    }
+
     input[type="time"],
     input[type="number"],
     input[type="text"],
@@ -191,6 +206,34 @@
             <input id="endTime" type="time" />
             <div class="hint">После этого времени новые сигналы создаются только на следующий день.</div>
           </div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2 class="panel-title">Вечер</h2>
+        <div class="grid">
+          <div class="row">
+            <label class="check-row">
+              <input id="bedtimeEnabled" type="checkbox" />
+              <span>Включить вечерние напоминания</span>
+            </label>
+            <div class="hint">Начинаются после дневного "Время по".</div>
+          </div>
+          <div class="row">
+            <label for="bedtimeEndTime">Вечернее время по</label>
+            <input id="bedtimeEndTime" type="time" />
+            <div class="hint">После этого времени вечерний сигнал переносится на завтра.</div>
+          </div>
+          <div class="row">
+            <label for="bedtimeIntervalMinutes">Интервал повтора, минут</label>
+            <input id="bedtimeIntervalMinutes" type="number" min="1" step="1" />
+            <div class="hint">Как часто напоминать, пока не нажата кнопка "Пошел спать".</div>
+          </div>
+        </div>
+        <div class="row" style="margin-top: 8px;">
+          <label for="bedtimeReminderText">Текст вечернего напоминания</label>
+          <input id="bedtimeReminderText" type="text" />
+          <div class="hint">Этот текст показывается в окне, уведомлении и произносится голосом.</div>
         </div>
       </section>
 

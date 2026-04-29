@@ -6,6 +6,7 @@ const nextEl = document.getElementById("next");
 const doneBtn = document.getElementById("doneBtn");
 const skipBtn = document.getElementById("skipBtn");
 const deferBtn = document.getElementById("deferBtn");
+const actionsEl = document.getElementById("actions");
 const mainControlsEl = document.getElementById("mainControls");
 const todayBtn = document.getElementById("todayBtn");
 const todayHistoryEl = document.getElementById("todayHistory");
@@ -23,8 +24,14 @@ let todayOpen = false;
 if (isReminderMode) {
   document.body.classList.add("reminder");
   mainControlsEl.hidden = true;
+  pauseBtn.hidden = true;
+  pauseOptionsEl.hidden = true;
   openOptionsBtn.hidden = true;
   todayHistoryEl.classList.add("hidden");
+} else {
+  mainControlsEl.hidden = false;
+  pauseBtn.hidden = false;
+  openOptionsBtn.hidden = false;
 }
 
 function formatTime(isoString) {
@@ -61,6 +68,18 @@ function formatEntryTime(isoString) {
   }
 
   return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+
+function getReminderKind(reminder) {
+  return reminder?.kind === "bedtime" ? "bedtime" : "exercise";
+}
+
+function setActionMode(kind, hasActiveReminder) {
+  const isBedtime = hasActiveReminder && kind === "bedtime";
+  doneBtn.textContent = isBedtime ? "Пошел спать" : "Сделано";
+  deferBtn.hidden = isBedtime;
+  skipBtn.hidden = isBedtime;
+  actionsEl.classList.toggle("bedtime-actions", isBedtime);
 }
 
 function setActionState(hasActiveReminder, isBusy) {
@@ -118,9 +137,12 @@ function renderTodayHistory(state) {
   const total = Array.isArray(state.completedToday) ? state.completedToday.length : 0;
   const entries = Array.isArray(state.completedToday) ? state.completedToday : [];
   const historySummary = Array.isArray(state.historySummary) ? state.historySummary : [];
+  const historyByDay = state.historyByDay && typeof state.historyByDay === "object" ? state.historyByDay : {};
   const currentDayKey = todayKey();
   const currentDay = historySummary.find((item) => item.dayKey === currentDayKey);
-  const otherDays = historySummary.filter((item) => item.dayKey !== currentDayKey);
+  const otherDays = Object.entries(historyByDay)
+    .filter(([dayKey, dayEntries]) => dayKey !== currentDayKey && Array.isArray(dayEntries) && dayEntries.length > 0)
+    .sort(([leftKey], [rightKey]) => rightKey.localeCompare(leftKey));
   const lines = [];
 
   if (total === 0) {
@@ -143,11 +165,11 @@ function renderTodayHistory(state) {
   if (otherDays.length > 0) {
     lines.push("");
     lines.push("История по дням:");
-    for (const day of otherDays) {
-      const details = Array.isArray(day.summary)
-        ? day.summary.map((item) => `${item.exercise}: ${item.count}`).join("; ")
-        : "";
-      lines.push(details ? `${day.dayKey} - ${day.total} (${details})` : `${day.dayKey} - ${day.total}`);
+    for (const [dayKey, dayEntries] of otherDays) {
+      lines.push(`${dayKey} - ${dayEntries.length}`);
+      for (const entry of dayEntries) {
+        lines.push(`  ${formatEntryTime(entry.completedAt)} - ${entry.exercise}`);
+      }
     }
   }
 
@@ -155,10 +177,12 @@ function renderTodayHistory(state) {
   todayHistoryEl.classList.remove("hidden");
 }
 
-function applyBaseCopy() {
+function applyBaseCopy(kind = "exercise") {
   if (isReminderMode) {
-    titleEl.textContent = "Пора размяться";
-    subtitleEl.textContent = "Подтвердите выполнение или пропустите текущий сигнал, если сейчас нельзя отвлечься.";
+    titleEl.textContent = kind === "bedtime" ? "Пора спать" : "Пора размяться";
+    subtitleEl.textContent = kind === "bedtime"
+      ? "Сверните дела и подтвердите, что уходите отдыхать."
+      : "Подтвердите выполнение или пропустите текущий сигнал, если сейчас нельзя отвлечься.";
     tipEl.hidden = true;
     return;
   }
@@ -174,6 +198,7 @@ function refresh() {
 
     if (!response) {
       setNormalMode();
+      setActionMode("exercise", false);
       setActionState(false, false);
       setMuteButtonState(null);
       setPauseButtonState(null);
@@ -186,10 +211,11 @@ function refresh() {
 
     if (response.validationError === "INVALID_WINDOW") {
       setAlertMode();
+      setActionMode("exercise", false);
       setActionState(false, false);
       setMuteButtonState(response.settings);
       setPauseButtonState(null);
-      statusEl.textContent = 'Проверьте настройки: время "с" должно быть раньше времени "по".';
+      statusEl.textContent = 'Проверьте настройки: дневное "с" должно быть раньше "по", а вечернее "по" - позже дневного.';
       exerciseEl.textContent = "";
       nextEl.textContent = "";
       renderTodayHistory(response.state || { completedToday: [], todaySummary: [] });
@@ -198,12 +224,19 @@ function refresh() {
 
     const { state, settings } = response;
     const pendingReminder = state.pendingReminder;
-    const hasActiveReminder = Boolean(state.hasActiveReminder && pendingReminder?.exercise);
+    const pendingKind = getReminderKind(pendingReminder);
+    const reminderText = pendingKind === "bedtime"
+      ? (pendingReminder?.message || pendingReminder?.exercise)
+      : pendingReminder?.exercise;
+    const hasActiveReminder = Boolean(state.hasActiveReminder && reminderText);
+    applyBaseCopy(pendingKind);
+    setActionMode(pendingKind, hasActiveReminder);
     setMuteButtonState(settings);
     setPauseButtonState(state);
 
     if (state.isPaused) {
       setNormalMode();
+      setActionMode("exercise", false);
       setActionState(false, false);
       statusEl.textContent = "Не беспокоить включен";
       exerciseEl.textContent = state.nextExercise ? `Следующее упражнение после паузы: ${state.nextExercise}` : "";
@@ -215,26 +248,37 @@ function refresh() {
     if (hasActiveReminder) {
       setAlertMode();
       setActionState(true, false);
-      statusEl.textContent = pendingReminder.test
-        ? "Тестовое напоминание"
-        : (isReminderMode ? "Сейчас сделать" : "Сейчас нужно сделать упражнение");
-      exerciseEl.textContent = isReminderMode ? pendingReminder.exercise : `Упражнение: ${pendingReminder.exercise}`;
-      nextEl.textContent = pendingReminder.test
+      statusEl.textContent = pendingKind === "bedtime"
+        ? "Вечернее напоминание"
+        : (pendingReminder.test
+          ? "Тестовое напоминание"
+          : (isReminderMode ? "Сейчас сделать" : "Сейчас нужно сделать упражнение"));
+      exerciseEl.textContent = pendingKind === "bedtime"
+        ? reminderText
+        : (isReminderMode ? pendingReminder.exercise : `Упражнение: ${pendingReminder.exercise}`);
+      nextEl.textContent = pendingKind === "bedtime"
+        ? `Повтор сигнала: каждые ${formatMinutes(settings.bedtimeIntervalMinutes)}`
+        : (pendingReminder.test
         ? "Это тест: очередь и история не изменятся"
         : (isReminderMode
           ? `Повтор сигнала: каждые ${formatMinutes(settings.repeatReminderMinutes)}`
-          : `Активный сигнал. Повтор каждые ${formatMinutes(settings.repeatReminderMinutes)}`);
+          : `Активный сигнал. Повтор каждые ${formatMinutes(settings.repeatReminderMinutes)}`));
       renderTodayHistory(state);
       return;
     }
 
     setNormalMode();
+    setActionMode("exercise", false);
     setActionState(false, false);
     statusEl.textContent = "Ожидание следующего сигнала";
     exerciseEl.textContent = state.isDeferredNext
       ? `Отложено: ${state.nextExercise} повторится следующим`
       : (state.nextExercise ? `Следующее упражнение: ${state.nextExercise}` : "");
-    nextEl.textContent = `${settings.soundMuted ? "Звук выключен. " : ""}Следующий сигнал: ${formatTime(state.nextDueAt)}`;
+    const nextItems = [`Следующий сигнал: ${formatTime(state.nextDueAt)}`];
+    if (settings.bedtimeEnabled && state.nextBedtimeDueAt) {
+      nextItems.push(`Вечернее: ${formatTime(state.nextBedtimeDueAt)}`);
+    }
+    nextEl.textContent = `${settings.soundMuted ? "Звук выключен. " : ""}${nextItems.join(" · ")}`;
     renderTodayHistory(state);
   });
 }
