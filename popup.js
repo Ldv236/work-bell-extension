@@ -11,10 +11,10 @@ const todayBtn = document.getElementById("todayBtn");
 const todayHistoryEl = document.getElementById("todayHistory");
 const muteBtn = document.getElementById("muteBtn");
 const pauseBtn = document.getElementById("pauseBtn");
+const pauseOptionsEl = document.getElementById("pauseOptions");
 const openOptionsBtn = document.getElementById("openOptionsBtn");
 const tipEl = document.getElementById("tip");
 const isReminderMode = new URLSearchParams(window.location.search).get("mode") === "reminder";
-const PAUSE_MINUTES = 30;
 let refreshTimer = null;
 let todayOpen = false;
 
@@ -93,10 +93,17 @@ function setPauseButtonState(state, isBusy = false) {
   const hasState = Boolean(state);
   const isPaused = Boolean(state?.isPaused);
   pauseBtn.disabled = !hasState || isBusy;
-  pauseBtn.textContent = isPaused ? "Снять паузу" : `Не беспокоить ${PAUSE_MINUTES} мин`;
-  pauseBtn.title = isPaused ? "Снова включить напоминания" : `Не показывать напоминания ${PAUSE_MINUTES} минут`;
+  pauseBtn.textContent = isPaused ? "Снять паузу" : "Не беспокоить";
+  pauseBtn.title = isPaused ? "Снова включить напоминания" : "Выберите длительность паузы ниже";
   pauseBtn.setAttribute("aria-pressed", isPaused ? "true" : "false");
   pauseBtn.classList.toggle("pause-active", isPaused);
+
+  if (pauseOptionsEl) {
+    pauseOptionsEl.hidden = !hasState || isPaused;
+    for (const button of pauseOptionsEl.querySelectorAll("button")) {
+      button.disabled = !hasState || isBusy || isPaused;
+    }
+  }
 }
 
 function renderTodayHistory(state) {
@@ -276,11 +283,10 @@ muteBtn.addEventListener("click", () => {
   });
 });
 
-pauseBtn.addEventListener("click", () => {
-  const isPaused = pauseBtn.getAttribute("aria-pressed") === "true";
-  setPauseButtonState({ isPaused: !isPaused }, true);
+function setPause(minutes) {
+  setPauseButtonState({ isPaused: true }, true);
   chrome.runtime.sendMessage(
-    isPaused ? { type: "CLEAR_PAUSE" } : { type: "SET_PAUSE", minutes: PAUSE_MINUTES },
+    { type: "SET_PAUSE", minutes },
     () => {
       if (isReminderMode) {
         window.close();
@@ -290,6 +296,32 @@ pauseBtn.addEventListener("click", () => {
       refresh();
     }
   );
+}
+
+pauseBtn.addEventListener("click", () => {
+  const isPaused = pauseBtn.getAttribute("aria-pressed") === "true";
+  if (!isPaused) {
+    return;
+  }
+
+  setPauseButtonState({ isPaused: false }, true);
+  chrome.runtime.sendMessage({ type: "CLEAR_PAUSE" }, () => {
+    if (isReminderMode) {
+      window.close();
+      return;
+    }
+
+    refresh();
+  });
+});
+
+pauseOptionsEl.addEventListener("click", (event) => {
+  const button = event.target.closest("button[data-pause-minutes]");
+  if (!button) {
+    return;
+  }
+
+  setPause(Number(button.dataset.pauseMinutes));
 });
 
 refresh();

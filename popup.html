@@ -190,6 +190,12 @@
       gap: 6px;
     }
 
+    .pause-options {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 6px;
+    }
+
     button.sound-muted {
       background: #4a4038;
       color: #ffffff;
@@ -211,6 +217,10 @@
 
     body.reminder .actions {
       gap: 10px;
+    }
+
+    body.reminder .pause-options {
+      display: none;
     }
 
     button {
@@ -267,7 +277,12 @@
             <button id="todayBtn" class="secondary">История</button>
             <button id="muteBtn" class="secondary" aria-pressed="false">Звук включен</button>
           </div>
-          <button id="pauseBtn" class="secondary">Не беспокоить 30 мин</button>
+          <button id="pauseBtn" class="secondary">Не беспокоить</button>
+          <div id="pauseOptions" class="pause-options">
+            <button class="secondary" data-pause-minutes="30">30 мин</button>
+            <button class="secondary" data-pause-minutes="60">1 час</button>
+            <button class="secondary" data-pause-minutes="90">1.5 часа</button>
+          </div>
           <button id="openOptionsBtn" class="secondary">Настройки</button>
         </div>
         <div id="tip" class="tip">"Сделано" учитывает упражнение в статистике за день. "Отложить" вернет это же упражнение в следующий сигнал. "Пропущу" закрывает текущее напоминание без учета.</div>
