@@ -180,8 +180,6 @@ async function getState() {
     reminderWindowId: null,
     pausedUntil: null,
     nextBedtimeDueAt: null,
-    bedtimeDoneDayKey: null,
-    bedtimeLastDoneAt: null,
     deferredExercise: null,
     queueDayKey: null,
     queueRemaining: [],
@@ -372,11 +370,7 @@ function computeTomorrowBedtimeStart(baseMoment, settings) {
   return tomorrow;
 }
 
-function didCompleteBedtimeToday(state, now = new Date()) {
-  return state.bedtimeDoneDayKey === todayKey(now);
-}
-
-function computeNextBedtimeDue(now, settings, state = {}) {
+function computeNextBedtimeDue(now, settings) {
   if (!isBedtimeWindowConfigured(settings, now)) {
     return null;
   }
@@ -388,7 +382,7 @@ function computeNextBedtimeDue(now, settings, state = {}) {
     return start;
   }
 
-  if (now <= end && !didCompleteBedtimeToday(state, now)) {
+  if (now <= end) {
     return now;
   }
 
@@ -864,7 +858,6 @@ function buildStatusState(state, settings, extras = {}) {
     nextExercise,
     deferredExercise,
     isDeferredNext: Boolean(deferredExercise && deferredExercise === nextExercise),
-    isBedtimeDoneToday: didCompleteBedtimeToday(state),
     todaySummary: buildTodaySummary(state.completedToday),
     historySummary: buildHistorySummary(state.historyByDay)
   };
@@ -941,7 +934,19 @@ async function getRuntimeState(now = new Date()) {
     };
   }
 
-  if (isPauseActive(stateWithDay.pausedUntil, now)) {
+  if (getReminderKind(pendingReminder) === REMINDER_KIND_EXERCISE && !isWithinWindow(now, settings)) {
+    pendingReminder = null;
+    await chrome.storage.local.set({
+      pendingReminder: null,
+      nextDueAt: computeFallbackNextDue(now, settings).toISOString(),
+      lastTickAt: now.toISOString()
+    });
+    await clearReminderPresentation();
+  }
+
+  const isBedtimeNow = isWithinBedtimeWindow(now, settings);
+
+  if (isPauseActive(stateWithDay.pausedUntil, now) && !isBedtimeNow) {
     await chrome.storage.local.set({
       pendingReminder: null,
       lastTickAt: now.toISOString()
@@ -957,7 +962,7 @@ async function getRuntimeState(now = new Date()) {
       state: buildStatusState(stateWithDay, settings, {
         pendingReminder: null,
         lastTickAt: now.toISOString(),
-        nextBedtimeDueAt: computeNextBedtimeDue(now, settings, stateWithDay)?.toISOString() || null,
+        nextBedtimeDueAt: computeNextBedtimeDue(now, settings)?.toISOString() || null,
         hasActiveReminder: false,
         isPaused: true,
         pausedUntil: stateWithDay.pausedUntil
@@ -965,7 +970,7 @@ async function getRuntimeState(now = new Date()) {
     };
   }
 
-  if (stateWithDay.pausedUntil) {
+  if (stateWithDay.pausedUntil && (!isPauseActive(stateWithDay.pausedUntil, now) || isBedtimeNow)) {
     stateWithDay.pausedUntil = null;
     await chrome.storage.local.set({ pausedUntil: null });
   }
@@ -973,14 +978,7 @@ async function getRuntimeState(now = new Date()) {
   const notificationVisible = await hasVisibleReminderNotification();
 
   if (!pendingReminder && notificationVisible) {
-    pendingReminder = {
-      exercise: stateWithDay.lastExercise || "Сделайте упражнение",
-      dueAt: stateWithDay.lastTickAt || now.toISOString(),
-      startedAt: stateWithDay.lastTickAt || now.toISOString(),
-      restored: true
-    };
-
-    await chrome.storage.local.set({ pendingReminder });
+    await chrome.notifications.clear(NOTIFICATION_ID);
   }
 
   if (pendingReminder?.exercise && pendingReminder?.dueAt) {
@@ -1001,7 +999,7 @@ async function getRuntimeState(now = new Date()) {
         pendingReminder,
         lastExercise,
         lastTickAt: now.toISOString(),
-        nextBedtimeDueAt: computeNextBedtimeDue(now, settings, stateWithDay)?.toISOString() || null,
+        nextBedtimeDueAt: computeNextBedtimeDue(now, settings)?.toISOString() || null,
         hasActiveReminder: true,
         isPaused: false
       })
@@ -1011,7 +1009,7 @@ async function getRuntimeState(now = new Date()) {
   const normalizedState = buildStatusState(stateWithDay, settings, {
     pendingReminder: null,
     nextDueAt: normalizeNextDue(stateWithDay, now, settings).toISOString(),
-    nextBedtimeDueAt: computeNextBedtimeDue(now, settings, stateWithDay)?.toISOString() || null,
+    nextBedtimeDueAt: computeNextBedtimeDue(now, settings)?.toISOString() || null,
     lastTickAt: now.toISOString(),
     hasActiveReminder: false,
     isPaused: false
@@ -1088,19 +1086,7 @@ async function resolveReminder(countExercise, options = {}) {
   });
 
   if (getReminderKind(state.pendingReminder) === REMINDER_KIND_BEDTIME) {
-    const nextBedtimeDueAt = isBedtimeWindowConfigured(settings, now)
-      ? computeTomorrowBedtimeStart(now, settings).toISOString()
-      : null;
-
-    await chrome.storage.local.set({
-      pendingReminder: null,
-      nextBedtimeDueAt,
-      bedtimeDoneDayKey: todayKey(now),
-      bedtimeLastDoneAt: now.toISOString(),
-      lastTickAt: now.toISOString()
-    });
-    await clearReminderPresentation();
-    return { ok: true, nextBedtimeDueAt, bedtime: true };
+    return { ok: false, reason: "BEDTIME_ACTIVE" };
   }
 
   const completedExercise = state.pendingReminder?.exercise || state.lastExercise || null;
@@ -1202,6 +1188,10 @@ async function setPauseFor(minutes) {
 
   const rawState = await getState();
   const state = await normalizeDayState(rawState, settings, now, { preserveEmptyQueue: true });
+  if (getReminderKind(state.pendingReminder) === REMINDER_KIND_BEDTIME || isWithinBedtimeWindow(now, settings)) {
+    return { ok: false, reason: "BEDTIME_ACTIVE" };
+  }
+
   const pauseMinutes = Math.max(1, Math.min(24 * 60, Number(minutes || 30)));
   const pausedUntil = new Date(now.getTime() + pauseMinutes * 60000).toISOString();
   const activeExercise = state.pendingReminder?.test || getReminderKind(state.pendingReminder) === REMINDER_KIND_BEDTIME
@@ -1328,8 +1318,6 @@ async function exportData() {
       state: {
         pausedUntil: state.pausedUntil || null,
         nextBedtimeDueAt: state.nextBedtimeDueAt || null,
-        bedtimeDoneDayKey: state.bedtimeDoneDayKey || null,
-        bedtimeLastDoneAt: state.bedtimeLastDoneAt || null,
         deferredExercise: state.deferredExercise || null,
         queueDayKey: state.queueDayKey || null,
         queueRemaining: sanitizeQueue(state.queueRemaining, settings.exercises),
@@ -1360,11 +1348,6 @@ async function importData(data) {
     : null;
   const pausedUntilDate = parseIsoDate(importedState.pausedUntil);
   const pausedUntil = pausedUntilDate && pausedUntilDate > now ? pausedUntilDate.toISOString() : null;
-  const bedtimeDoneDayKey = /^\d{4}-\d{2}-\d{2}$/.test(String(importedState.bedtimeDoneDayKey || ""))
-    ? importedState.bedtimeDoneDayKey
-    : null;
-  const bedtimeLastDoneAtDate = parseIsoDate(importedState.bedtimeLastDoneAt);
-
   if (completedToday.length > 0) {
     historyByDay[currentDayKey] = completedToday;
   }
@@ -1378,9 +1361,7 @@ async function importData(data) {
     lastTickAt: now.toISOString(),
     reminderWindowId: null,
     pausedUntil,
-    nextBedtimeDueAt: computeNextBedtimeDue(now, settings, { bedtimeDoneDayKey })?.toISOString() || null,
-    bedtimeDoneDayKey,
-    bedtimeLastDoneAt: bedtimeLastDoneAtDate ? bedtimeLastDoneAtDate.toISOString() : null,
+    nextBedtimeDueAt: computeNextBedtimeDue(now, settings)?.toISOString() || null,
     deferredExercise,
     queueDayKey: currentDayKey,
     queueRemaining,
@@ -1520,7 +1501,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       }
 
       await chrome.storage.local.set({
-        nextBedtimeDueAt: computeNextBedtimeDue(now, runtime.settings, runtime.state)?.toISOString() || null
+        nextBedtimeDueAt: computeNextBedtimeDue(now, runtime.settings)?.toISOString() || null
       });
       sendResponse({ ok: true });
       return;
@@ -1583,13 +1564,12 @@ async function tick() {
 
   const nextBedtimeDueAt = state.nextBedtimeDueAt
     ? new Date(state.nextBedtimeDueAt)
-    : computeNextBedtimeDue(now, settings, state);
+    : computeNextBedtimeDue(now, settings);
 
   if (nextBedtimeDueAt
     && !Number.isNaN(nextBedtimeDueAt.getTime())
     && now >= nextBedtimeDueAt
-    && isWithinBedtimeWindow(now, settings)
-    && !didCompleteBedtimeToday(state, now)) {
+    && isWithinBedtimeWindow(now, settings)) {
     await triggerBedtimeReminder(now, settings);
     return;
   }

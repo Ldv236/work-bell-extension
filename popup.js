@@ -132,6 +132,17 @@ function setPauseButtonState(state, isBusy = false) {
   }
 }
 
+function setPauseHidden(hidden) {
+  if (isReminderMode) {
+    return;
+  }
+
+  pauseBtn.hidden = hidden;
+  if (hidden && pauseOptionsEl) {
+    pauseOptionsEl.hidden = true;
+  }
+}
+
 function renderTodayHistory(state) {
   if (isReminderMode || !todayOpen) {
     todayHistoryEl.classList.add("hidden");
@@ -206,6 +217,7 @@ function refresh() {
       setActionState(false, false);
       setMuteButtonState(null);
       setPauseButtonState(null);
+      setPauseHidden(false);
       statusEl.textContent = "Статус недоступен";
       exerciseEl.textContent = "";
       nextEl.textContent = "";
@@ -219,6 +231,7 @@ function refresh() {
       setActionState(false, false);
       setMuteButtonState(response.settings);
       setPauseButtonState(null);
+      setPauseHidden(false);
       statusEl.textContent = 'Проверьте настройки: дневное "с" должно быть раньше "по", а вечернее "по" - позже дневного.';
       exerciseEl.textContent = "";
       nextEl.textContent = "";
@@ -237,10 +250,12 @@ function refresh() {
     setActionMode(pendingKind, hasActiveReminder);
     setMuteButtonState(settings);
     setPauseButtonState(state);
+    setPauseHidden(hasActiveReminder && pendingKind === "bedtime");
 
     if (state.isPaused) {
       setNormalMode();
       setActionMode("exercise", false);
+      setPauseHidden(false);
       setActionState(false, false);
       statusEl.textContent = "Не беспокоить включен";
       exerciseEl.textContent = state.nextExercise ? `Следующее упражнение после паузы: ${state.nextExercise}` : "";
@@ -273,6 +288,7 @@ function refresh() {
 
     setNormalMode();
     setActionMode("exercise", false);
+    setPauseHidden(false);
     setActionState(false, false);
     statusEl.textContent = "Ожидание следующего сигнала";
     exerciseEl.textContent = state.isDeferredNext
@@ -343,7 +359,12 @@ function setPause(minutes) {
   setPauseButtonState({ isPaused: true }, true);
   chrome.runtime.sendMessage(
     { type: "SET_PAUSE", minutes },
-    () => {
+    (response) => {
+      if (!response?.ok) {
+        refresh();
+        return;
+      }
+
       if (isReminderMode) {
         window.close();
         return;
