@@ -76,6 +76,7 @@ const saveBtn = document.getElementById("save");
 const resetQueueBtn = document.getElementById("resetQueue");
 const testSoundBtn = document.getElementById("testSound");
 const testReminderBtn = document.getElementById("testReminder");
+const testBedtimeReminderBtn = document.getElementById("testBedtimeReminder");
 const exportDataBtn = document.getElementById("exportData");
 const importDataBtn = document.getElementById("importData");
 const importFileEl = document.getElementById("importFile");
@@ -352,6 +353,39 @@ function testReminder() {
   });
 }
 
+function testBedtimeReminder() {
+  if (Number(bedtimeIntervalMinutesEl.value) < 1) {
+    flashStatus("Вечерний интервал повтора должен быть не меньше 1 минуты.", "error", 2600);
+    return;
+  }
+
+  const bedtimeReminderText = String(bedtimeReminderTextEl.value).trim();
+  if (!bedtimeReminderText) {
+    flashStatus("Заполните текст вечернего напоминания.", "error", 2600);
+    return;
+  }
+
+  chrome.runtime.sendMessage({
+    type: "TRIGGER_TEST_BEDTIME_REMINDER",
+    bedtimeReminderText,
+    bedtimeIntervalMinutes: Number(bedtimeIntervalMinutesEl.value),
+    audioMode: audioModeEl.value,
+    volume: Number(volumeEl.value) / 100
+  }, (response) => {
+    if (response?.ok) {
+      flashStatus("Тест вечернего сигнала создан", "ok");
+      return;
+    }
+
+    const reasonText = {
+      ACTIVE_REMINDER: "Сначала закройте активное напоминание.",
+      INVALID_WINDOW: "Проверьте дневной и вечерний период в настройках.",
+      PAUSED: "Сначала снимите режим \"Не беспокоить\"."
+    };
+    flashStatus(reasonText[response?.reason] || "Не удалось создать тест вечернего сигнала", "error", 2600);
+  });
+}
+
 function exportData() {
   chrome.runtime.sendMessage({ type: "EXPORT_DATA" }, (response) => {
     if (!response?.ok || !response.data) {
@@ -415,6 +449,7 @@ saveBtn.addEventListener("click", () => {
 resetQueueBtn.addEventListener("click", resetQueue);
 testSoundBtn.addEventListener("click", testSound);
 testReminderBtn.addEventListener("click", testReminder);
+testBedtimeReminderBtn.addEventListener("click", testBedtimeReminder);
 exportDataBtn.addEventListener("click", exportData);
 importDataBtn.addEventListener("click", () => {
   importFileEl.click();

@@ -520,9 +520,22 @@ function getReminderText(reminder, settings) {
 }
 
 function getReminderRepeatMinutes(settings, reminder) {
+  const reminderRepeatMinutes = Number(reminder?.repeatReminderMinutes);
+  if (Number.isFinite(reminderRepeatMinutes) && reminderRepeatMinutes >= 1) {
+    return reminderRepeatMinutes;
+  }
+
   return getReminderKind(reminder) === REMINDER_KIND_BEDTIME
     ? settings.bedtimeIntervalMinutes
     : settings.repeatReminderMinutes;
+}
+
+function getReminderPlaybackSettings(settings, reminder) {
+  return {
+    ...settings,
+    audioMode: reminder?.audioMode === AUDIO_MODE_BEEP ? AUDIO_MODE_BEEP : settings.audioMode,
+    volume: normalizedVolume(reminder?.volume, settings.volume)
+  };
 }
 
 async function ensureOffscreen() {
@@ -581,17 +594,19 @@ async function stopOffscreenSignal() {
 }
 
 async function playReminderIntro(settings, reminder) {
+  const playbackSettings = getReminderPlaybackSettings(settings, reminder);
+
   if (getReminderKind(reminder) === REMINDER_KIND_BEDTIME) {
-    await playSignal(getReminderText(reminder, settings), settings);
+    await playSignal(getReminderText(reminder, settings), playbackSettings);
     return;
   }
 
   const speech = buildReminderSpeech(reminder.exercise, settings);
-  await playSignal(speech.introText, settings);
+  await playSignal(speech.introText, playbackSettings);
 }
 
 async function playReminderRepeat(settings, reminder) {
-  await playSignal(getReminderText(reminder, settings), settings);
+  await playSignal(getReminderText(reminder, settings), getReminderPlaybackSettings(settings, reminder));
 }
 
 async function playPreview(settings, volumeOverride, introOverride, outroOverride, audioModeOverride) {
@@ -646,11 +661,11 @@ async function showReminderNotification(reminder) {
     type: "basic",
     iconUrl: "icons/128.png",
     title: isBedtime
-      ? "Пора спать"
+      ? (isTest ? "Тест вечернего сигнала" : "Пора спать")
       : (isTest ? "Тестовое напоминание Work Bell" : "Пора встать от компьютера"),
     message: isBedtime ? (reminder.message || "Пора идти спать") : `Сейчас сделать: ${reminder.exercise}`,
     contextMessage: isTest
-      ? "Это тест: очередь и история не изменятся."
+      ? (isBedtime ? "Это тест: реальное вечернее расписание не изменится." : "Это тест: очередь и история не изменятся.")
       : (isBedtime ? "Сигнал будет повторяться, пока браузер или расширение работают." : "Откройте окно, чтобы отложить или включить паузу."),
     ...(isBedtime ? {} : {
       buttons: [
@@ -1086,6 +1101,21 @@ async function resolveReminder(countExercise, options = {}) {
   });
 
   if (getReminderKind(state.pendingReminder) === REMINDER_KIND_BEDTIME) {
+    if (state.pendingReminder?.test) {
+      const nextBedtimeDueAt = state.pendingReminder?.previousNextBedtimeDueAt
+        || state.nextBedtimeDueAt
+        || computeNextBedtimeDue(now, settings)?.toISOString()
+        || null;
+
+      await chrome.storage.local.set({
+        pendingReminder: null,
+        nextBedtimeDueAt,
+        lastTickAt: now.toISOString()
+      });
+      await clearReminderPresentation();
+      return { ok: true, nextBedtimeDueAt, bedtime: true, test: true };
+    }
+
     return { ok: false, reason: "BEDTIME_ACTIVE" };
   }
 
@@ -1262,6 +1292,58 @@ async function triggerTestReminder() {
   await showReminderNotification(reminder);
   await openReminderWindow();
   await scheduleRepeatAlarm(settings.repeatReminderMinutes);
+  await playReminderIntro(settings, reminder);
+
+  return { ok: true };
+}
+
+async function triggerTestBedtimeReminder(message) {
+  const now = new Date();
+  const runtime = await getRuntimeState(now);
+
+  if (runtime.validationError === "INVALID_WINDOW") {
+    return { ok: false, reason: "INVALID_WINDOW" };
+  }
+
+  if (runtime.state.isPaused) {
+    return { ok: false, reason: "PAUSED" };
+  }
+
+  if (runtime.state.pendingReminder) {
+    return { ok: false, reason: "ACTIVE_REMINDER" };
+  }
+
+  const text = String(message?.bedtimeReminderText || runtime.settings.bedtimeReminderText || DEFAULTS.bedtimeReminderText).trim()
+    || DEFAULTS.bedtimeReminderText;
+  const settings = {
+    ...runtime.settings,
+    audioMode: message?.audioMode === AUDIO_MODE_BEEP ? AUDIO_MODE_BEEP : runtime.settings.audioMode,
+    volume: normalizedVolume(message?.volume, runtime.settings.volume),
+    bedtimeIntervalMinutes: positiveNumber(message?.bedtimeIntervalMinutes, runtime.settings.bedtimeIntervalMinutes),
+    bedtimeReminderText: text
+  };
+  const reminder = {
+    kind: REMINDER_KIND_BEDTIME,
+    message: text,
+    exercise: text,
+    dueAt: now.toISOString(),
+    startedAt: now.toISOString(),
+    previousNextBedtimeDueAt: runtime.state.nextBedtimeDueAt || null,
+    repeatReminderMinutes: settings.bedtimeIntervalMinutes,
+    audioMode: settings.audioMode,
+    volume: settings.volume,
+    test: true
+  };
+
+  await chrome.storage.local.set({
+    pendingReminder: reminder,
+    lastTickAt: now.toISOString()
+  });
+
+  await setBadgePending(true);
+  await showReminderNotification(reminder);
+  await openReminderWindow();
+  await scheduleRepeatAlarm(settings.bedtimeIntervalMinutes);
   await playReminderIntro(settings, reminder);
 
   return { ok: true };
@@ -1455,6 +1537,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
     if (message?.type === "TRIGGER_TEST_REMINDER") {
       sendResponse(await triggerTestReminder());
+      return;
+    }
+
+    if (message?.type === "TRIGGER_TEST_BEDTIME_REMINDER") {
+      sendResponse(await triggerTestBedtimeReminder(message));
       return;
     }
 
