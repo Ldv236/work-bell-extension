@@ -239,7 +239,7 @@ function validate() {
   }
 
   if (Number(bedtimeIntervalMinutesEl.value) < 1) {
-    return "Вечерний интервал повтора должен быть не меньше 1 минуты.";
+    return "Вечерний интервал сигналов должен быть не меньше 1 минуты.";
   }
 
   if (!String(reminderIntroTextEl.value).trim()) {
@@ -355,7 +355,7 @@ function testReminder() {
 
 function testBedtimeReminder() {
   if (Number(bedtimeIntervalMinutesEl.value) < 1) {
-    flashStatus("Вечерний интервал повтора должен быть не меньше 1 минуты.", "error", 2600);
+    flashStatus("Вечерний интервал сигналов должен быть не меньше 1 минуты.", "error", 2600);
     return;
   }
 

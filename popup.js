@@ -21,7 +21,6 @@ const isReminderMode = new URLSearchParams(window.location.search).get("mode") =
 let refreshTimer = null;
 let todayOpen = false;
 let activeReminderKind = "exercise";
-let activeReminderIsTest = false;
 
 if (isReminderMode) {
   document.body.classList.add("reminder");
@@ -76,11 +75,10 @@ function getReminderKind(reminder) {
   return reminder?.kind === "bedtime" ? "bedtime" : "exercise";
 }
 
-function setActionMode(kind, hasActiveReminder, isTest = false) {
+function setActionMode(kind, hasActiveReminder) {
   const isBedtime = hasActiveReminder && kind === "bedtime";
-  const showBedtimeClose = isBedtime && (isReminderMode || isTest);
+  const showBedtimeClose = isBedtime;
   activeReminderKind = isBedtime ? "bedtime" : "exercise";
-  activeReminderIsTest = Boolean(isBedtime && isTest);
   actionsEl.hidden = isBedtime && !showBedtimeClose;
   doneBtn.textContent = showBedtimeClose ? "Ок" : "Сделано";
   deferBtn.hidden = isBedtime;
@@ -281,7 +279,7 @@ function refresh() {
       nextEl.textContent = pendingKind === "bedtime"
         ? (isTestReminder
           ? "Это тест: реальное вечернее расписание не изменится"
-          : `Повтор сигнала: каждые ${formatMinutes(settings.bedtimeIntervalMinutes)}`)
+          : `Ок закроет текущее напоминание. Следующее: ${formatTime(state.nextBedtimeDueAt)}`)
         : (pendingReminder.test
         ? "Это тест: очередь и история не изменятся"
         : (isReminderMode
@@ -321,16 +319,6 @@ function resolveReminder(type) {
 }
 
 doneBtn.addEventListener("click", () => {
-  if (activeReminderKind === "bedtime" && isReminderMode) {
-    if (activeReminderIsTest) {
-      resolveReminder("MARK_DONE");
-      return;
-    }
-
-    window.close();
-    return;
-  }
-
   resolveReminder("MARK_DONE");
 });
 

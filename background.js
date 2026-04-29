@@ -405,6 +405,34 @@ function computeNextBedtimeDue(now, settings) {
   return tomorrow;
 }
 
+function computeNextBedtimeDueAfter(baseMoment, settings) {
+  if (!isBedtimeWindowConfigured(settings, baseMoment)) {
+    return null;
+  }
+
+  const window = buildBedtimeWindow(baseMoment, settings);
+  if (!window) {
+    return null;
+  }
+
+  if (baseMoment < window.start) {
+    return window.start;
+  }
+
+  if (baseMoment > window.end) {
+    return computeNextBedtimeDue(baseMoment, settings);
+  }
+
+  const intervalMs = positiveNumber(settings.bedtimeIntervalMinutes, DEFAULTS.bedtimeIntervalMinutes) * 60000;
+  const candidate = new Date(baseMoment.getTime() + intervalMs);
+
+  if (candidate <= window.end && isWithinBedtimeWindow(candidate, settings)) {
+    return candidate;
+  }
+
+  return computeNextBedtimeDue(new Date(window.end.getTime() + 1000), settings);
+}
+
 function sanitizeQueue(queue, fallbackExercises) {
   const validSet = new Set(fallbackExercises);
   return Array.isArray(queue)
@@ -525,6 +553,10 @@ function buildReminderSpeech(exercise, settings) {
 
 function getReminderKind(reminder) {
   return reminder?.kind === REMINDER_KIND_BEDTIME ? REMINDER_KIND_BEDTIME : REMINDER_KIND_EXERCISE;
+}
+
+function isRealBedtimeReminder(reminder) {
+  return getReminderKind(reminder) === REMINDER_KIND_BEDTIME && !reminder?.test;
 }
 
 function getReminderText(reminder, settings) {
@@ -673,6 +705,13 @@ async function setBadgePending(isPending) {
 async function showReminderNotification(reminder) {
   const isTest = Boolean(reminder.test);
   const isBedtime = getReminderKind(reminder) === REMINDER_KIND_BEDTIME;
+  const buttons = isBedtime
+    ? [{ title: "Ок" }]
+    : [
+      { title: "Сделано" },
+      { title: "Пропущу" }
+    ];
+
   await chrome.notifications.create(NOTIFICATION_ID, {
     type: "basic",
     iconUrl: "icons/128.png",
@@ -682,15 +721,10 @@ async function showReminderNotification(reminder) {
     message: isBedtime ? (reminder.message || "Пора идти спать") : `Сейчас сделать: ${reminder.exercise}`,
     contextMessage: isTest
       ? (isBedtime ? "Это тест: реальное вечернее расписание не изменится." : "Это тест: очередь и история не изменятся.")
-      : (isBedtime ? "Сигнал будет повторяться, пока браузер или расширение работают." : "Откройте окно, чтобы отложить или включить паузу."),
-    ...(isBedtime ? {} : {
-      buttons: [
-        { title: "Сделано" },
-        { title: "Пропущу" }
-      ]
-    }),
+      : (isBedtime ? "Ок закрывает текущее напоминание; следующее появится по вечернему интервалу." : "Откройте окно, чтобы отложить или включить паузу."),
+    buttons,
     priority: 2,
-    requireInteraction: true
+    requireInteraction: !isBedtime
   });
 }
 
@@ -918,6 +952,11 @@ async function refreshPendingReminderPresentation(pendingReminder, settings, opt
   if (options.forceWindow) {
     await openReminderWindow();
   }
+  if (isRealBedtimeReminder(pendingReminder)) {
+    await clearRepeatAlarm();
+    return;
+  }
+
   await ensureRepeatAlarmScheduled(getReminderRepeatMinutes(settings, pendingReminder));
 }
 
@@ -980,6 +1019,16 @@ async function getRuntimeState(now = new Date()) {
 
   const isBedtimeNow = isWithinBedtimeWindow(now, settings);
 
+  if (isRealBedtimeReminder(pendingReminder) && !isBedtimeNow) {
+    pendingReminder = null;
+    await chrome.storage.local.set({
+      pendingReminder: null,
+      nextBedtimeDueAt: computeNextBedtimeDue(now, settings)?.toISOString() || null,
+      lastTickAt: now.toISOString()
+    });
+    await clearReminderPresentation();
+  }
+
   if (isPauseActive(stateWithDay.pausedUntil, now) && !isBedtimeNow) {
     await chrome.storage.local.set({
       pendingReminder: null,
@@ -1017,6 +1066,12 @@ async function getRuntimeState(now = new Date()) {
 
   if (pendingReminder?.exercise && pendingReminder?.dueAt) {
     const pendingKind = getReminderKind(pendingReminder);
+    const isBedtime = pendingKind === REMINDER_KIND_BEDTIME;
+    const scheduledBedtimeDue = parseIsoDate(stateWithDay.nextBedtimeDueAt);
+    const fallbackBedtimeDue = computeNextBedtimeDueAfter(parseIsoDate(pendingReminder.dueAt) || now, settings);
+    const nextBedtimeDueAt = isBedtime
+      ? (scheduledBedtimeDue || fallbackBedtimeDue)?.toISOString() || null
+      : computeNextBedtimeDue(now, settings)?.toISOString() || null;
     const lastExercise = pendingKind === REMINDER_KIND_EXERCISE
       ? pendingReminder.exercise
       : stateWithDay.lastExercise;
@@ -1024,7 +1079,8 @@ async function getRuntimeState(now = new Date()) {
     await chrome.storage.local.set({
       pendingReminder,
       lastExercise,
-      lastTickAt: now.toISOString()
+      lastTickAt: now.toISOString(),
+      ...(isBedtime ? { nextBedtimeDueAt } : {})
     });
 
     return {
@@ -1033,7 +1089,7 @@ async function getRuntimeState(now = new Date()) {
         pendingReminder,
         lastExercise,
         lastTickAt: now.toISOString(),
-        nextBedtimeDueAt: computeNextBedtimeDue(now, settings)?.toISOString() || null,
+        nextBedtimeDueAt,
         hasActiveReminder: true,
         isPaused: false
       })
@@ -1089,6 +1145,7 @@ async function triggerReminder(now, settings, state) {
 
 async function triggerBedtimeReminder(now, settings) {
   const text = String(settings.bedtimeReminderText || DEFAULTS.bedtimeReminderText).trim();
+  const nextBedtimeDueAt = computeNextBedtimeDueAfter(now, settings)?.toISOString() || null;
   const reminder = {
     kind: REMINDER_KIND_BEDTIME,
     message: text,
@@ -1099,14 +1156,15 @@ async function triggerBedtimeReminder(now, settings) {
 
   await chrome.storage.local.set({
     pendingReminder: reminder,
-    nextBedtimeDueAt: null,
+    nextBedtimeDueAt,
     lastTickAt: now.toISOString()
   });
 
   await setBadgePending(true);
+  await clearRepeatAlarm();
+  await chrome.notifications.clear(NOTIFICATION_ID);
   await showReminderNotification(reminder);
   await openReminderWindow();
-  await scheduleRepeatAlarm(settings.bedtimeIntervalMinutes);
   await playReminderIntro(settings, reminder);
 }
 
@@ -1135,7 +1193,21 @@ async function resolveReminder(countExercise, options = {}) {
       return { ok: true, nextBedtimeDueAt, bedtime: true, test: true };
     }
 
-    return { ok: false, reason: "BEDTIME_ACTIVE" };
+    const scheduledBedtimeDue = parseIsoDate(state.nextBedtimeDueAt);
+    const nextBedtimeDue = scheduledBedtimeDue
+      && scheduledBedtimeDue > now
+      && isWithinBedtimeWindow(scheduledBedtimeDue, settings)
+      ? scheduledBedtimeDue
+      : computeNextBedtimeDueAfter(now, settings);
+    const nextBedtimeDueAt = nextBedtimeDue?.toISOString() || null;
+
+    await chrome.storage.local.set({
+      pendingReminder: null,
+      nextBedtimeDueAt,
+      lastTickAt: now.toISOString()
+    });
+    await clearReminderPresentation();
+    return { ok: true, nextBedtimeDueAt, bedtime: true };
   }
 
   const completedExercise = state.pendingReminder?.exercise || state.lastExercise || null;
@@ -1219,6 +1291,12 @@ async function handleRepeatAlarm() {
   const { settings, state } = runtime;
   if (!state.pendingReminder) {
     await clearRepeatAlarm();
+    return;
+  }
+
+  if (isRealBedtimeReminder(state.pendingReminder)) {
+    await clearRepeatAlarm();
+    await setBadgePending(true);
     return;
   }
 
@@ -1578,7 +1656,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       const now = new Date();
       const runtime = await getRuntimeState(now);
       if (runtime.state.pendingReminder) {
-        await refreshPendingReminderPresentation(runtime.state.pendingReminder, runtime.settings, { forceNotification: true });
+        if (isRealBedtimeReminder(runtime.state.pendingReminder)) {
+          await clearRepeatAlarm();
+          await setBadgePending(true);
+        } else {
+          await refreshPendingReminderPresentation(runtime.state.pendingReminder, runtime.settings, { forceNotification: true });
+        }
       } else if (runtime.state.isPaused) {
         await chrome.storage.local.set({
           nextDueAt: computeDueAfterPause(runtime.state.pausedUntil, runtime.settings).toISOString(),
@@ -1606,8 +1689,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         }
       }
 
+      const nextBedtimeDue = isRealBedtimeReminder(runtime.state.pendingReminder)
+        ? computeNextBedtimeDueAfter(now, runtime.settings)
+        : computeNextBedtimeDue(now, runtime.settings);
+
       await chrome.storage.local.set({
-        nextBedtimeDueAt: computeNextBedtimeDue(now, runtime.settings)?.toISOString() || null
+        nextBedtimeDueAt: nextBedtimeDue?.toISOString() || null
       });
       sendResponse({ ok: true });
       return;
@@ -1657,6 +1744,24 @@ async function tick() {
   }
 
   if (state.pendingReminder) {
+    if (isRealBedtimeReminder(state.pendingReminder)) {
+      const nextBedtimeDueAt = state.nextBedtimeDueAt
+        ? new Date(state.nextBedtimeDueAt)
+        : computeNextBedtimeDueAfter(parseIsoDate(state.pendingReminder.dueAt) || now, settings);
+
+      if (nextBedtimeDueAt
+        && !Number.isNaN(nextBedtimeDueAt.getTime())
+        && now >= nextBedtimeDueAt
+        && isWithinBedtimeWindow(now, settings)) {
+        await triggerBedtimeReminder(now, settings);
+        return;
+      }
+
+      await clearRepeatAlarm();
+      await setBadgePending(true);
+      return;
+    }
+
     await refreshPendingReminderPresentation(state.pendingReminder, settings);
     return;
   }
@@ -1691,6 +1796,13 @@ async function bootstrap() {
     return;
   }
   if (runtime.state.pendingReminder) {
+    if (isRealBedtimeReminder(runtime.state.pendingReminder)) {
+      await clearRepeatAlarm();
+      await setBadgePending(true);
+      await tick();
+      return;
+    }
+
     await refreshPendingReminderPresentation(runtime.state.pendingReminder, runtime.settings, {
       forceNotification: true,
       forceWindow: true
