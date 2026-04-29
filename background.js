@@ -433,6 +433,34 @@ function computeNextBedtimeDueAfter(baseMoment, settings) {
   return computeNextBedtimeDue(new Date(window.end.getTime() + 1000), settings);
 }
 
+function isDateInWindow(date, window) {
+  return Boolean(date && window && date >= window.start && date <= window.end);
+}
+
+function normalizeNextBedtimeDue(state, now, settings) {
+  if (!isBedtimeWindowConfigured(settings, now)) {
+    return null;
+  }
+
+  const existingDue = parseIsoDate(state.nextBedtimeDueAt);
+  const currentWindow = buildBedtimeWindow(now, settings);
+  if (isDateInWindow(existingDue, currentWindow)) {
+    return existingDue;
+  }
+
+  return computeNextBedtimeDue(now, settings);
+}
+
+function normalizePendingBedtimeDue(state, now, settings, pendingReminder) {
+  const existingDue = parseIsoDate(state.nextBedtimeDueAt);
+  const currentWindow = buildBedtimeWindow(now, settings);
+  if (isDateInWindow(existingDue, currentWindow)) {
+    return existingDue;
+  }
+
+  return computeNextBedtimeDueAfter(parseIsoDate(pendingReminder?.dueAt) || now, settings);
+}
+
 function sanitizeQueue(queue, fallbackExercises) {
   const validSet = new Set(fallbackExercises);
   return Array.isArray(queue)
@@ -1045,7 +1073,7 @@ async function getRuntimeState(now = new Date()) {
       state: buildStatusState(stateWithDay, settings, {
         pendingReminder: null,
         lastTickAt: now.toISOString(),
-        nextBedtimeDueAt: computeNextBedtimeDue(now, settings)?.toISOString() || null,
+        nextBedtimeDueAt: normalizeNextBedtimeDue(stateWithDay, now, settings)?.toISOString() || null,
         hasActiveReminder: false,
         isPaused: true,
         pausedUntil: stateWithDay.pausedUntil
@@ -1067,11 +1095,9 @@ async function getRuntimeState(now = new Date()) {
   if (pendingReminder?.exercise && pendingReminder?.dueAt) {
     const pendingKind = getReminderKind(pendingReminder);
     const isBedtime = pendingKind === REMINDER_KIND_BEDTIME;
-    const scheduledBedtimeDue = parseIsoDate(stateWithDay.nextBedtimeDueAt);
-    const fallbackBedtimeDue = computeNextBedtimeDueAfter(parseIsoDate(pendingReminder.dueAt) || now, settings);
     const nextBedtimeDueAt = isBedtime
-      ? (scheduledBedtimeDue || fallbackBedtimeDue)?.toISOString() || null
-      : computeNextBedtimeDue(now, settings)?.toISOString() || null;
+      ? normalizePendingBedtimeDue(stateWithDay, now, settings, pendingReminder)?.toISOString() || null
+      : normalizeNextBedtimeDue(stateWithDay, now, settings)?.toISOString() || null;
     const lastExercise = pendingKind === REMINDER_KIND_EXERCISE
       ? pendingReminder.exercise
       : stateWithDay.lastExercise;
@@ -1099,7 +1125,7 @@ async function getRuntimeState(now = new Date()) {
   const normalizedState = buildStatusState(stateWithDay, settings, {
     pendingReminder: null,
     nextDueAt: normalizeNextDue(stateWithDay, now, settings).toISOString(),
-    nextBedtimeDueAt: computeNextBedtimeDue(now, settings)?.toISOString() || null,
+    nextBedtimeDueAt: normalizeNextBedtimeDue(stateWithDay, now, settings)?.toISOString() || null,
     lastTickAt: now.toISOString(),
     hasActiveReminder: false,
     isPaused: false
@@ -1690,8 +1716,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       }
 
       const nextBedtimeDue = isRealBedtimeReminder(runtime.state.pendingReminder)
-        ? computeNextBedtimeDueAfter(now, runtime.settings)
-        : computeNextBedtimeDue(now, runtime.settings);
+        ? normalizePendingBedtimeDue(runtime.state, now, runtime.settings, runtime.state.pendingReminder)
+        : normalizeNextBedtimeDue(runtime.state, now, runtime.settings);
 
       await chrome.storage.local.set({
         nextBedtimeDueAt: nextBedtimeDue?.toISOString() || null
