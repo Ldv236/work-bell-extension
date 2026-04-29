@@ -657,13 +657,13 @@ async function showReminderNotification(reminder) {
     message: isBedtime ? (reminder.message || "Пора идти спать") : `Сейчас сделать: ${reminder.exercise}`,
     contextMessage: isTest
       ? "Это тест: очередь и история не изменятся."
-      : (isBedtime ? "Закройте напоминание, когда уходите спать." : "Откройте окно, чтобы отложить или включить паузу."),
-    buttons: isBedtime
-      ? [{ title: "Пошел спать" }]
-      : [
+      : (isBedtime ? "Сигнал будет повторяться, пока браузер или расширение работают." : "Откройте окно, чтобы отложить или включить паузу."),
+    ...(isBedtime ? {} : {
+      buttons: [
         { title: "Сделано" },
         { title: "Пропущу" }
-      ],
+      ]
+    }),
     priority: 2,
     requireInteraction: true
   });

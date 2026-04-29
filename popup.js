@@ -76,10 +76,10 @@ function getReminderKind(reminder) {
 
 function setActionMode(kind, hasActiveReminder) {
   const isBedtime = hasActiveReminder && kind === "bedtime";
-  doneBtn.textContent = isBedtime ? "Пошел спать" : "Сделано";
-  deferBtn.hidden = isBedtime;
-  skipBtn.hidden = isBedtime;
-  actionsEl.classList.toggle("bedtime-actions", isBedtime);
+  actionsEl.hidden = isBedtime;
+  doneBtn.textContent = "Сделано";
+  deferBtn.hidden = false;
+  skipBtn.hidden = false;
 }
 
 function setActionState(hasActiveReminder, isBusy) {
@@ -181,7 +181,7 @@ function applyBaseCopy(kind = "exercise") {
   if (isReminderMode) {
     titleEl.textContent = kind === "bedtime" ? "Пора спать" : "Пора размяться";
     subtitleEl.textContent = kind === "bedtime"
-      ? "Сверните дела и подтвердите, что уходите отдыхать."
+      ? "Сверните дела, выключите ноутбук и идите отдыхать."
       : "Подтвердите выполнение или пропустите текущий сигнал, если сейчас нельзя отвлечься.";
     tipEl.hidden = true;
     return;
