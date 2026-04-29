@@ -144,7 +144,7 @@ async function load() {
   const reminderIntroTextRaw = String(rawSettings.reminderIntroText ?? DEFAULTS.reminderIntroText).trim();
   const reminderOutroTextRaw = String(rawSettings.reminderOutroText ?? DEFAULTS.reminderOutroText).trim();
   const bedtimeEndTime = rawSettings.bedtimeEndTime || DEFAULTS.bedtimeEndTime;
-  const bedtimeEnabled = rawSettings.bedtimeEnabled !== false && rawSettings.endTime < bedtimeEndTime;
+  const bedtimeEnabled = rawSettings.bedtimeEnabled !== false && rawSettings.endTime !== bedtimeEndTime;
   const settings = {
     ...rawSettings,
     bedtimeEnabled,
@@ -213,8 +213,8 @@ function validate() {
       return "Укажите вечернее время окончания.";
     }
 
-    if (endTimeEl.value >= bedtimeEndTimeEl.value) {
-      return 'Вечернее "время по" должно быть позже дневного "Время по".';
+    if (endTimeEl.value === bedtimeEndTimeEl.value) {
+      return 'Вечернее "время по" не должно совпадать с дневным "Время по". Если оно раньше, период закончится на следующий день.';
     }
   }
 

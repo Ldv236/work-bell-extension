@@ -234,7 +234,7 @@ function refresh() {
       setMuteButtonState(response.settings);
       setPauseButtonState(null);
       setPauseHidden(false);
-      statusEl.textContent = 'Проверьте настройки: дневное "с" должно быть раньше "по", а вечернее "по" - позже дневного.';
+      statusEl.textContent = 'Проверьте настройки: дневное "с" должно быть раньше "по", а вечернее "по" не должно совпадать с дневным.';
       exerciseEl.textContent = "";
       nextEl.textContent = "";
       renderTodayHistory(response.state || { completedToday: [], todaySummary: [] });

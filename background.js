@@ -135,7 +135,7 @@ async function getSettings() {
     : reminderOutroTextRaw;
   const exercises = migratedExercises.exercises.length > 0 ? migratedExercises.exercises : DEFAULTS.exercises;
 
-  if (bedtimeEnabled && isValidHHMM(raw.endTime) && raw.endTime >= bedtimeEndTime) {
+  if (bedtimeEnabled && isValidHHMM(raw.endTime) && raw.endTime === bedtimeEndTime) {
     bedtimeEnabled = false;
   }
 
@@ -243,7 +243,7 @@ function isValidWindow(settings, baseDate = new Date()) {
     return false;
   }
 
-  return dayEnd.getTime() < atDay(settings.bedtimeEndTime, baseDate).getTime();
+  return settings.endTime !== settings.bedtimeEndTime;
 }
 
 function isWithinWindow(moment, settings) {
@@ -256,17 +256,35 @@ function isBedtimeWindowConfigured(settings, baseDate = new Date()) {
   return Boolean(settings.bedtimeEnabled
     && isValidHHMM(settings.endTime)
     && isValidHHMM(settings.bedtimeEndTime)
-    && atDay(settings.endTime, baseDate).getTime() < atDay(settings.bedtimeEndTime, baseDate).getTime());
+    && settings.endTime !== settings.bedtimeEndTime);
+}
+
+function buildBedtimeWindow(moment, settings) {
+  if (!isBedtimeWindowConfigured(settings, moment)) {
+    return null;
+  }
+
+  const startToday = atDay(settings.endTime, moment);
+  const endToday = atDay(settings.bedtimeEndTime, moment);
+
+  if (settings.bedtimeEndTime > settings.endTime) {
+    return { start: startToday, end: endToday };
+  }
+
+  if (moment <= endToday) {
+    const startYesterday = atDay(settings.endTime, moment);
+    startYesterday.setDate(startYesterday.getDate() - 1);
+    return { start: startYesterday, end: endToday };
+  }
+
+  const endTomorrow = atDay(settings.bedtimeEndTime, moment);
+  endTomorrow.setDate(endTomorrow.getDate() + 1);
+  return { start: startToday, end: endTomorrow };
 }
 
 function isWithinBedtimeWindow(moment, settings) {
-  if (!isBedtimeWindowConfigured(settings, moment)) {
-    return false;
-  }
-
-  const start = atDay(settings.endTime, moment);
-  const end = atDay(settings.bedtimeEndTime, moment);
-  return moment >= start && moment <= end;
+  const window = buildBedtimeWindow(moment, settings);
+  return Boolean(window && moment >= window.start && moment <= window.end);
 }
 
 function isScheduledSlot(moment, settings) {
@@ -364,29 +382,27 @@ function computeBedtimeStart(baseMoment, settings) {
   return atDay(settings.endTime, baseMoment);
 }
 
-function computeTomorrowBedtimeStart(baseMoment, settings) {
-  const tomorrow = computeBedtimeStart(baseMoment, settings);
-  tomorrow.setDate(tomorrow.getDate() + 1);
-  return tomorrow;
-}
-
 function computeNextBedtimeDue(now, settings) {
   if (!isBedtimeWindowConfigured(settings, now)) {
     return null;
   }
 
-  const start = computeBedtimeStart(now, settings);
-  const end = atDay(settings.bedtimeEndTime, now);
-
-  if (now < start) {
-    return start;
+  const window = buildBedtimeWindow(now, settings);
+  if (!window) {
+    return null;
   }
 
-  if (now <= end) {
+  if (now < window.start) {
+    return window.start;
+  }
+
+  if (now <= window.end) {
     return now;
   }
 
-  return computeTomorrowBedtimeStart(now, settings);
+  const tomorrow = computeBedtimeStart(now, settings);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  return tomorrow;
 }
 
 function sanitizeQueue(queue, fallbackExercises) {
@@ -913,7 +929,10 @@ async function getRuntimeState(now = new Date()) {
 
   if (pendingReminder?.dueAt) {
     const reminderDueAt = new Date(pendingReminder.dueAt);
-    if (!Number.isNaN(reminderDueAt.getTime()) && !isSameCalendarDay(reminderDueAt, now)) {
+    const pendingKind = getReminderKind(pendingReminder);
+    const isOvernightBedtimeReminder = pendingKind === REMINDER_KIND_BEDTIME && isWithinBedtimeWindow(now, settings);
+
+    if (!Number.isNaN(reminderDueAt.getTime()) && !isSameCalendarDay(reminderDueAt, now) && !isOvernightBedtimeReminder) {
       pendingReminder = null;
       await chrome.storage.local.set({
         pendingReminder: null,
@@ -1380,7 +1399,7 @@ function sanitizeImportedSettings(rawSettings) {
     settings.endTime = DEFAULTS.endTime;
   }
 
-  if (settings.bedtimeEnabled && settings.endTime >= settings.bedtimeEndTime) {
+  if (settings.bedtimeEnabled && settings.endTime === settings.bedtimeEndTime) {
     settings.bedtimeEnabled = false;
   }
 
