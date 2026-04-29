@@ -196,9 +196,40 @@
       gap: 6px;
     }
 
-    button.sound-muted {
-      background: #4a4038;
-      color: #ffffff;
+    .sound-toggle {
+      min-height: 34px;
+      box-sizing: border-box;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 7px;
+      border-radius: 10px;
+      background: var(--soft);
+      color: var(--text);
+      font-size: 12px;
+      font-weight: 700;
+      cursor: pointer;
+      user-select: none;
+    }
+
+    .sound-toggle input {
+      width: 15px;
+      height: 15px;
+      margin: 0;
+      accent-color: #027a48;
+    }
+
+    .sound-state {
+      color: #027a48;
+    }
+
+    .sound-toggle.sound-muted .sound-state {
+      color: #b42318;
+    }
+
+    .sound-toggle.disabled {
+      opacity: 0.5;
+      cursor: default;
     }
 
     button.pause-active {
@@ -275,7 +306,11 @@
           </div>
           <div id="mainControls" class="pair">
             <button id="todayBtn" class="secondary">История</button>
-            <button id="muteBtn" class="secondary" aria-pressed="false">Звук включен</button>
+            <label id="soundToggle" class="sound-toggle">
+              <input id="muteBtn" type="checkbox" checked />
+              <span>Звук</span>
+              <span id="soundState" class="sound-state">включен</span>
+            </label>
           </div>
           <button id="pauseBtn" class="secondary">Не беспокоить</button>
           <div id="pauseOptions" class="pause-options">

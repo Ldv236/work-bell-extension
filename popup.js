@@ -9,7 +9,9 @@ const deferBtn = document.getElementById("deferBtn");
 const mainControlsEl = document.getElementById("mainControls");
 const todayBtn = document.getElementById("todayBtn");
 const todayHistoryEl = document.getElementById("todayHistory");
+const soundToggleEl = document.getElementById("soundToggle");
 const muteBtn = document.getElementById("muteBtn");
+const soundStateEl = document.getElementById("soundState");
 const pauseBtn = document.getElementById("pauseBtn");
 const pauseOptionsEl = document.getElementById("pauseOptions");
 const openOptionsBtn = document.getElementById("openOptionsBtn");
@@ -83,10 +85,11 @@ function setMuteButtonState(settings, isBusy = false) {
   const hasSettings = Boolean(settings);
   const soundMuted = Boolean(settings?.soundMuted);
   muteBtn.disabled = !hasSettings || isBusy;
-  muteBtn.textContent = soundMuted ? "Звук выключен" : "Звук включен";
-  muteBtn.title = soundMuted ? "Включить звук напоминаний" : "Выключить звук напоминаний";
-  muteBtn.setAttribute("aria-pressed", soundMuted ? "true" : "false");
-  muteBtn.classList.toggle("sound-muted", soundMuted);
+  muteBtn.checked = !soundMuted;
+  soundStateEl.textContent = soundMuted ? "выключен" : "включен";
+  soundToggleEl.title = soundMuted ? "Включить звук напоминаний" : "Выключить звук напоминаний";
+  soundToggleEl.classList.toggle("sound-muted", soundMuted);
+  soundToggleEl.classList.toggle("disabled", !hasSettings || isBusy);
 }
 
 function setPauseButtonState(state, isBusy = false) {
@@ -270,8 +273,8 @@ openOptionsBtn.addEventListener("click", () => {
   chrome.runtime.openOptionsPage();
 });
 
-muteBtn.addEventListener("click", () => {
-  const soundMuted = muteBtn.getAttribute("aria-pressed") !== "true";
+muteBtn.addEventListener("change", () => {
+  const soundMuted = !muteBtn.checked;
   setMuteButtonState({ soundMuted }, true);
   chrome.runtime.sendMessage({ type: "SET_SOUND_MUTED", soundMuted }, (response) => {
     if (response?.ok) {
