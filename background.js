@@ -847,6 +847,14 @@ function normalizeNextDue(state, now, settings) {
     return fallback;
   }
 
+  if (!isSameCalendarDay(nextDue, now)) {
+    return fallback;
+  }
+
+  if (nextDue < now && !isWithinWindow(now, settings)) {
+    return fallback;
+  }
+
   const lastTickAt = state.lastTickAt ? new Date(state.lastTickAt) : null;
   const wasRecentlyActive = lastTickAt && now.getTime() - lastTickAt.getTime() <= ACTIVE_TICK_GAP_MS;
 
@@ -1042,6 +1050,7 @@ async function getRuntimeState(now = new Date()) {
       pendingReminder: null,
       lastTickAt: now.toISOString()
     });
+    await clearReminderPresentation();
 
     return {
       settings,
@@ -1260,10 +1269,19 @@ async function resolveReminder(countExercise, options = {}) {
     return { ok: true, nextBedtimeDueAt, bedtime: true };
   }
 
-  const completedExercise = state.pendingReminder?.exercise || state.lastExercise || null;
+  if (!state.pendingReminder?.exercise) {
+    await chrome.storage.local.set({
+      pendingReminder: null,
+      lastTickAt: now.toISOString()
+    });
+    await clearReminderPresentation();
+    return { ok: false, reason: "NO_ACTIVE_REMINDER" };
+  }
+
+  const completedExercise = state.pendingReminder.exercise;
   const completedToday = [...state.completedToday];
   const historyByDay = sanitizeHistoryByDay(state.historyByDay);
-  const isTestReminder = Boolean(state.pendingReminder?.test);
+  const isTestReminder = Boolean(state.pendingReminder.test);
   const queueRemaining = deferExercise
     ? restoreExerciseToQueue(completedExercise, state.queueRemaining, settings)
     : state.queueRemaining;
@@ -1863,7 +1881,7 @@ async function tick() {
 
   const nextDueAt = state.nextDueAt ? new Date(state.nextDueAt) : computeFallbackNextDue(now, settings);
 
-  if (now >= nextDueAt && isWithinWindow(nextDueAt, settings)) {
+  if (now >= nextDueAt && isWithinWindow(now, settings) && isWithinWindow(nextDueAt, settings)) {
     await triggerReminder(now, settings, state);
     return;
   }
