@@ -4,6 +4,7 @@ const statusEl = document.getElementById("status");
 const exerciseEl = document.getElementById("exercise");
 const nextEl = document.getElementById("next");
 const doneBtn = document.getElementById("doneBtn");
+const prizeBtn = document.getElementById("prizeBtn");
 const skipBtn = document.getElementById("skipBtn");
 const deferBtn = document.getElementById("deferBtn");
 const actionsEl = document.getElementById("actions");
@@ -20,7 +21,6 @@ const tipEl = document.getElementById("tip");
 const isReminderMode = new URLSearchParams(window.location.search).get("mode") === "reminder";
 let refreshTimer = null;
 let todayOpen = false;
-let activeReminderKind = "exercise";
 
 if (isReminderMode) {
   document.body.classList.add("reminder");
@@ -75,12 +75,12 @@ function getReminderKind(reminder) {
   return reminder?.kind === "bedtime" ? "bedtime" : "exercise";
 }
 
-function setActionMode(kind, hasActiveReminder) {
+function setActionMode(kind, hasActiveReminder, isTest = false) {
   const isBedtime = hasActiveReminder && kind === "bedtime";
   const showBedtimeClose = isBedtime;
-  activeReminderKind = isBedtime ? "bedtime" : "exercise";
   actionsEl.hidden = isBedtime && !showBedtimeClose;
   doneBtn.textContent = showBedtimeClose ? "Ок" : "Сделано";
+  prizeBtn.hidden = isBedtime || Boolean(isTest);
   deferBtn.hidden = isBedtime;
   skipBtn.hidden = isBedtime;
   actionsEl.classList.toggle("single-action", showBedtimeClose);
@@ -88,6 +88,7 @@ function setActionMode(kind, hasActiveReminder) {
 
 function setActionState(hasActiveReminder, isBusy) {
   doneBtn.disabled = !hasActiveReminder || isBusy;
+  prizeBtn.disabled = !hasActiveReminder || isBusy;
   deferBtn.disabled = !hasActiveReminder || isBusy;
   skipBtn.disabled = !hasActiveReminder || isBusy;
 }
@@ -318,8 +319,30 @@ function resolveReminder(type) {
   });
 }
 
+function rerollExercise() {
+  setActionState(true, true);
+  chrome.runtime.sendMessage({ type: "REROLL_EXERCISE" }, (response) => {
+    if (response?.ok) {
+      refresh();
+      return;
+    }
+
+    setActionState(true, false);
+    if (response?.reason === "NO_ALTERNATIVE") {
+      nextEl.textContent = "Нет другого упражнения в очереди.";
+      return;
+    }
+
+    refresh();
+  });
+}
+
 doneBtn.addEventListener("click", () => {
   resolveReminder("MARK_DONE");
+});
+
+prizeBtn.addEventListener("click", () => {
+  rerollExercise();
 });
 
 skipBtn.addEventListener("click", () => {

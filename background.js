@@ -749,7 +749,7 @@ async function showReminderNotification(reminder) {
     message: isBedtime ? (reminder.message || "Пора идти спать") : `Сейчас сделать: ${reminder.exercise}`,
     contextMessage: isTest
       ? (isBedtime ? "Это тест: реальное вечернее расписание не изменится." : "Это тест: очередь и история не изменятся.")
-      : (isBedtime ? "Ок закрывает текущее напоминание; следующее появится по вечернему интервалу." : "Откройте окно, чтобы отложить или включить паузу."),
+      : (isBedtime ? "Ок закрывает текущее напоминание; следующее появится по вечернему интервалу." : "Откройте окно, чтобы отложить, сменить упражнение или включить паузу."),
     buttons,
     priority: 2,
     requireInteraction: !isBedtime
@@ -969,6 +969,30 @@ function restoreExerciseToQueue(exercise, queueRemaining, settings) {
   }
 
   return [normalizedExercise, ...sanitizedQueue];
+}
+
+function takePrizeExercise(currentExercise, queueRemaining, settings) {
+  const normalizedCurrent = String(currentExercise || "").trim();
+  const sanitizedQueue = sanitizeQueue(queueRemaining, settings.exercises)
+    .filter((exercise) => exercise !== normalizedCurrent);
+
+  if (sanitizedQueue.length > 0) {
+    return {
+      exercise: sanitizedQueue[0],
+      queueRemaining: sanitizedQueue.slice(1)
+    };
+  }
+
+  const alternatives = settings.exercises.filter((exercise) => exercise !== normalizedCurrent);
+  if (alternatives.length === 0) {
+    return null;
+  }
+
+  const replenishedQueue = buildExerciseQueue(alternatives, settings.queueOrderMode);
+  return {
+    exercise: replenishedQueue[0],
+    queueRemaining: replenishedQueue.slice(1)
+  };
 }
 
 async function refreshPendingReminderPresentation(pendingReminder, settings, options = {}) {
@@ -1305,6 +1329,46 @@ async function resolveReminder(countExercise, options = {}) {
   return { ok: true, nextDueAt: nextDueAt.toISOString() };
 }
 
+async function rerollActiveExercise() {
+  const now = new Date();
+  const settings = await getSettings();
+  const rawState = await getState();
+  const state = await normalizeDayState(rawState, settings, now, { preserveEmptyQueue: true });
+  const pendingReminder = state.pendingReminder;
+
+  if (!pendingReminder) {
+    return { ok: false, reason: "NO_ACTIVE_REMINDER" };
+  }
+
+  if (getReminderKind(pendingReminder) !== REMINDER_KIND_EXERCISE || pendingReminder.test) {
+    return { ok: false, reason: "UNSUPPORTED_REMINDER" };
+  }
+
+  const prize = takePrizeExercise(pendingReminder.exercise, state.queueRemaining, settings);
+  if (!prize) {
+    return { ok: false, reason: "NO_ALTERNATIVE" };
+  }
+
+  const updatedReminder = {
+    ...pendingReminder,
+    exercise: prize.exercise
+  };
+
+  await chrome.storage.local.set({
+    pendingReminder: updatedReminder,
+    lastExercise: updatedReminder.exercise,
+    lastTickAt: now.toISOString(),
+    queueRemaining: prize.queueRemaining,
+    queueDayKey: todayKey(now),
+    deferredExercise: null
+  });
+
+  await setBadgePending(true);
+  await chrome.notifications.clear(NOTIFICATION_ID);
+  await showReminderNotification(updatedReminder);
+  return { ok: true, exercise: updatedReminder.exercise };
+}
+
 async function handleRepeatAlarm() {
   const now = new Date();
   const runtime = await getRuntimeState(now);
@@ -1628,6 +1692,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
     if (message?.type === "MARK_DEFERRED") {
       sendResponse(await resolveReminder(false, { deferExercise: true }));
+      return;
+    }
+
+    if (message?.type === "REROLL_EXERCISE") {
+      sendResponse(await rerollActiveExercise());
       return;
     }
 

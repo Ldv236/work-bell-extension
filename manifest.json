@@ -1,6 +1,6 @@
 ﻿{
   "name": "Work Bell - упражнения",
-  "version": "2.4.1",
+  "version": "2.5.0",
   "manifest_version": 3,
   "description": "Ежедневные напоминания с упражнениями и отдельный вечерний сигнал отхода ко сну.",
   "permissions": [
