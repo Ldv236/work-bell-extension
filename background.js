@@ -595,6 +595,14 @@ function getReminderText(reminder, settings) {
   return String(reminder?.exercise || "").trim();
 }
 
+function getValidReminderDueAt(reminder) {
+  return parseIsoDate(reminder?.dueAt);
+}
+
+function isValidPendingReminder(reminder, settings) {
+  return Boolean(reminder && getReminderText(reminder, settings) && getValidReminderDueAt(reminder));
+}
+
 function getReminderRepeatMinutes(settings, reminder) {
   const reminderRepeatMinutes = Number(reminder?.repeatReminderMinutes);
   if (Number.isFinite(reminderRepeatMinutes) && reminderRepeatMinutes >= 1) {
@@ -1031,12 +1039,22 @@ async function getRuntimeState(now = new Date()) {
   const stateWithDay = await normalizeDayState(rawState, settings, now);
   let pendingReminder = stateWithDay.pendingReminder;
 
-  if (pendingReminder?.dueAt) {
-    const reminderDueAt = new Date(pendingReminder.dueAt);
+  if (pendingReminder && !isValidPendingReminder(pendingReminder, settings)) {
+    pendingReminder = null;
+    await chrome.storage.local.set({
+      pendingReminder: null,
+      reminderWindowId: null,
+      lastTickAt: now.toISOString()
+    });
+    await clearReminderPresentation();
+  }
+
+  if (pendingReminder) {
+    const reminderDueAt = getValidReminderDueAt(pendingReminder);
     const pendingKind = getReminderKind(pendingReminder);
     const isOvernightBedtimeReminder = pendingKind === REMINDER_KIND_BEDTIME && isWithinBedtimeWindow(now, settings);
 
-    if (!Number.isNaN(reminderDueAt.getTime()) && !isSameCalendarDay(reminderDueAt, now) && !isOvernightBedtimeReminder) {
+    if (!isSameCalendarDay(reminderDueAt, now) && !isOvernightBedtimeReminder) {
       pendingReminder = null;
       await chrome.storage.local.set({
         pendingReminder: null,
@@ -1241,6 +1259,15 @@ async function resolveReminder(countExercise, options = {}) {
     preserveEmptyQueue: deferExercise
   });
 
+  if (state.pendingReminder && !isValidPendingReminder(state.pendingReminder, settings)) {
+    await chrome.storage.local.set({
+      pendingReminder: null,
+      lastTickAt: now.toISOString()
+    });
+    await clearReminderPresentation();
+    return { ok: false, reason: "INVALID_REMINDER" };
+  }
+
   if (getReminderKind(state.pendingReminder) === REMINDER_KIND_BEDTIME) {
     if (state.pendingReminder?.test) {
       const nextBedtimeDueAt = state.pendingReminder?.previousNextBedtimeDueAt
@@ -1361,6 +1388,15 @@ async function rerollActiveExercise() {
 
   if (!pendingReminder) {
     return { ok: false, reason: "NO_ACTIVE_REMINDER" };
+  }
+
+  if (!isValidPendingReminder(pendingReminder, settings)) {
+    await chrome.storage.local.set({
+      pendingReminder: null,
+      lastTickAt: now.toISOString()
+    });
+    await clearReminderPresentation();
+    return { ok: false, reason: "INVALID_REMINDER" };
   }
 
   if (getReminderKind(pendingReminder) !== REMINDER_KIND_EXERCISE || pendingReminder.test) {
