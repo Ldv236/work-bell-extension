@@ -685,6 +685,11 @@ async function playReminderRepeat(settings, reminder) {
   await playSignal(getReminderText(reminder, settings), getReminderPlaybackSettings(settings, reminder));
 }
 
+async function playPrizeExerciseAnnouncement(settings, exercise) {
+  const text = `Сектор-приз на барабане - упражнение ${exercise}`;
+  await playSignal(text, { ...settings, audioMode: AUDIO_MODE_VOICE });
+}
+
 async function playPreview(settings, volumeOverride, introOverride, outroOverride, audioModeOverride) {
   const previewSettings = {
     ...settings,
@@ -1384,6 +1389,7 @@ async function rerollActiveExercise() {
   await setBadgePending(true);
   await chrome.notifications.clear(NOTIFICATION_ID);
   await showReminderNotification(updatedReminder);
+  await playPrizeExerciseAnnouncement(settings, updatedReminder.exercise);
   return { ok: true, exercise: updatedReminder.exercise };
 }
 
